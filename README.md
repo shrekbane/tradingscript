@@ -122,6 +122,17 @@ If you select the named conditions (Buy Signal, Sell Signal, TP1/TP2/TP3 Hit, St
 
 ---
 
+## ⏰ Alert Hours (optional)
+
+By default, alerts can fire any time a signal or TP/SL hit occurs, 24/7. Turn on **Only Alert During Selected Hours** if you only want to be pinged during your own trading hours (e.g. skip overnight or the session you don't trade):
+
+- **Trading Hours (session)** — TradingView's native session picker, including which days of the week are active, not just a time range.
+- **Timezone** — a dropdown of common timezones (Exchange default, UTC, New York, London, Tokyo, Sydney, etc.) rather than a free-text field, so you don't need to know your IANA timezone string.
+
+This setting only gates the **alerts** — the confluence score, badge, table, and drawn entry/SL/TP levels keep updating on the chart around the clock either way. You'll never lose visibility on the chart itself; you'll just stop getting notified outside your chosen hours. The table's **Alerts** row shows the live status: "Always," "Active hours," or "Outside hours."
+
+---
+
 ## 🕰️ Setup history
 
 By default, only the most recent setup is shown on the chart. Turn on **Show Previous Setups** to keep a trail of past signal markers so you can visually audit how the last several setups played out. Everything else — the entry line/label, SL and TP1–3 levels, and the "TP1/TP2/TP3/SL hit" tags — is always cleared down to just the current, live setup the moment a new signal fires. Only the small direction + grade badge (e.g. `▲ BUY B ★`) persists across past setups, keeping history clean instead of piling up old price levels and hit tags.
@@ -145,6 +156,11 @@ By default, only the most recent setup is shown on the chart. Turn on **Show Pre
 - SL and TP1–3 ATR multiples
 - Core Signal toggle + lookback
 - Volatility scaling toggle + Low/High multipliers
+
+**Alert Hours**
+- Only alert during selected hours (toggle)
+- Trading hours session (with day-of-week picker)
+- Timezone (dropdown)
 
 **Display**
 - Show info table, signal markers, EMA lines
