@@ -1,4 +1,4 @@
-# 📊 Confluence Scalper — Trend + Momentum + Volatility + HTF Bias
+# 📊 GradeRunner — Trend + Momentum + Volatility + HTF Bias
 
 A Pine Script v5 indicator for TradingView that grades every setup on a 0–10 confluence score, then auto-plots an entry, stop loss, and three take-profit levels the moment a graded signal fires. Built for traders who want a structured, rules-based way to combine trend, momentum, higher-timeframe bias, and volatility into a single readable signal — instead of eyeballing five indicators separately.
 
@@ -10,7 +10,7 @@ Signals only fire on a **confirmed (closed) bar** — there's no repainting of t
 
 This isn't published on TradingView's public script library, so you'll add it manually via the Pine Editor:
 
-1. Open [`Confluence_Scalper.pine`](./Confluence_Scalper.pine) in this repo and copy the full contents (use the "Raw" button on GitHub, then select all + copy).
+1. Open [`GradeRunner.pine`](./GradeRunner.pine) in this repo and copy the full contents (use the "Raw" button on GitHub, then select all + copy).
 2. In TradingView, open any chart and click the **Pine Editor** tab at the bottom of the screen.
 3. Click **Open** → **New blank script**, select all the placeholder code, and delete it.
 4. Paste in the copied script.
@@ -21,7 +21,7 @@ This isn't published on TradingView's public script library, so you'll add it ma
 
 | File | Description |
 |---|---|
-| `Confluence_Scalper.pine` | The indicator source code |
+| `GradeRunner.pine` | The indicator source code |
 | `README.md` | This file |
 
 ---
@@ -46,6 +46,8 @@ The winning side's total becomes the **score**, and the score maps to a **grade*
 | < 5 | C |
 
 You set a **minimum grade** in settings — signals graded below that are simply not shown.
+
+**Table note:** the info table's **Score** row reflects this combined direction (all 5 factors). The **Trend** row, however, shows the **higher-timeframe bias specifically** — a standalone "bigger picture" read, independent of the local chart's tactical indicators (RSI, MACD, ADX). This is intentional: Score tells you how strongly everything currently agrees, while Trend tells you what the bigger picture looks like on its own, even if the local score is fighting it.
 
 ---
 
@@ -100,22 +102,22 @@ There's also a dynamic `alert()` message (selectable as "Any alert() function ca
 
 Here's what will actually land in your alert feed / notifications once a condition fires (example prices shown, yours will reflect the live market):
 
-> **Confluence Scalper: Buy Signal**
+> **GradeRunner: Buy Signal**
 > BUY signal (A ★★) on XAUUSD @ 4020.975
 
-> **Confluence Scalper: Sell Signal**
+> **GradeRunner: Sell Signal**
 > SELL signal (B ★) on XAUUSD @ 4016.690
 
-> **Confluence Scalper: TP1 Hit**
+> **GradeRunner: TP1 Hit**
 > XAUUSD: TP1 hit @ 4025.260
 
-> **Confluence Scalper: TP2 Hit**
+> **GradeRunner: TP2 Hit**
 > XAUUSD: TP2 hit @ 4029.545
 
-> **Confluence Scalper: TP3 Hit**
+> **GradeRunner: TP3 Hit**
 > XAUUSD: TP3 hit @ 4033.829
 
-> **Confluence Scalper: Stop Loss Hit**
+> **GradeRunner: Stop Loss Hit**
 > XAUUSD: Stop Loss hit @ 4016.690
 
 If you select the named conditions (Buy Signal, Sell Signal, TP1/TP2/TP3 Hit, Stop Loss Hit) in Create Alert, the message uses TradingView's own placeholders instead (e.g. "XAUUSD: TP1 hit at 4025.26"). Pick "Any alert() function call" if you want the richer version above with grade and star rating included.
@@ -129,7 +131,7 @@ By default, alerts can fire any time a signal or TP/SL hit occurs, 24/7. Turn on
 - **Trading Hours (session)** — TradingView's native session picker, including which days of the week are active, not just a time range.
 - **Timezone** — a dropdown of common timezones (Exchange default, UTC, New York, London, Tokyo, Sydney, etc.) rather than a free-text field, so you don't need to know your IANA timezone string.
 
-This setting only gates the **alerts** — the confluence score, badge, table, and drawn entry/SL/TP levels keep updating on the chart around the clock either way. You'll never lose visibility on the chart itself; you'll just stop getting notified outside your chosen hours. The table's **Alerts** row shows the live status: "Always," "Active hours," or "Outside hours."
+This setting only gates the **alerts** — the confluence score, badge, table, and drawn entry/SL/TP levels keep updating on the chart around the clock either way. You'll never lose visibility on the chart itself; you'll just stop getting notified outside your chosen hours.
 
 ---
 
