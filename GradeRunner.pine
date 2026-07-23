@@ -98,6 +98,24 @@ showTrendLines = input.bool(false, "Show Trend (EMA) Lines", group=grpTable)
 showHistory = input.bool(false, "Show Previous Setups (keep history)", group=grpTable)
 maxSetups   = input.int(5, "Max Setups to Keep (if history on)", minval=1, maxval=40, group=grpTable)
 
+// ---------------- COLOR PALETTE (light/dark theme safe) ----------------
+// One shared palette used everywhere on the chart, chosen so every color
+// keeps decent contrast whether the chart theme is light or dark:
+// - palBull/palBear: mid-brightness teal/red (similar family to TradingView's
+//   own up/down candle colors) rather than pure color.green/color.red or a
+//   very dark maroon, which can wash out or vanish depending on theme.
+// - palNeutral: derived from chart.fg_color, so it's automatically near-black
+//   on a light chart and near-white on a dark chart — used for the TP levels,
+//   which should read as "neutral text," not bullish or bearish.
+// - palEntry: a bright, saturated blue that holds contrast on both themes.
+// - palEmaFast/palEmaSlow: mid-tone amber/violet for the optional EMA lines.
+palBull    = color.new(#26A69A, 0)
+palBear    = color.new(#EF5350, 0)
+palEntry   = color.new(#2962FF, 0)
+palNeutral = color.new(chart.fg_color, 0)
+palEmaFast = color.new(#FFB300, 0)
+palEmaSlow = color.new(#8E24AA, 0)
+
 // ---------------- TREND ----------------
 emaFast = ta.ema(close, fastLen)
 emaSlow = ta.ema(close, slowLen)
@@ -276,11 +294,12 @@ if newSignal
     trimSetups()
 
     if showLabels
-        // Colors tuned to match the reference screenshot: solid blue entry,
-        // near-black dashed TP levels, dark red/maroon solid SL.
-        entryCol = color.new(color.blue, 0)
-        tpCol    = color.new(#1a1a1a, 0)
-        slCol    = color.new(color.maroon, 0)
+        // Uses the shared palette so entry/TP/SL stay legible on both light
+        // and dark chart themes: neutral (theme-adaptive) TP levels, bear-red
+        // SL, accent-blue entry.
+        entryCol = palEntry
+        tpCol    = palNeutral
+        slCol    = palBear
 
         array.push(entryLines, line.new(bar_index, entryPrice, bar_index + extendBars, entryPrice, color=entryCol, style=line.style_solid,  width=1))
         array.push(slLines,    line.new(bar_index, slPrice,    bar_index + extendBars, slPrice,    color=slCol,    style=line.style_solid,  width=1))
@@ -300,7 +319,7 @@ if newSignal
         badgeArrow = direction == 1 ? "▲" : "▼"
         badgeDir   = direction == 1 ? "BUY" : "SELL"
         badgeText  = badgeArrow + " " + badgeDir + " " + grade + " " + stars
-        badgeCol   = direction == 1 ? color.new(color.green, 0) : color.new(color.red, 0)
+        badgeCol   = direction == 1 ? palBull : palBear
         array.push(badgeLbls, label.new(bar_index, direction == 1 ? low : high, badgeText, style=direction == 1 ? label.style_label_up : label.style_label_down, color=badgeCol, textcolor=color.white, size=size.small))
 
     if alertsAllowed
@@ -328,28 +347,28 @@ hitSL  = inTrade and not newSignal and not slHit  and (tradeDir == 1 ? low  <= s
 if hitTP1
     tp1Hit := true
     if showLabels
-        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP1 hit", style=label.style_none, textcolor=color.green, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
+        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP1 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
     if alertsAllowed
         alert(syminfo.ticker + ": TP1 hit @ " + str.tostring(tp1Price, format.mintick), alert.freq_once_per_bar_close)
 
 if hitTP2
     tp2Hit := true
     if showLabels
-        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP2 hit", style=label.style_none, textcolor=color.green, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
+        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP2 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
     if alertsAllowed
         alert(syminfo.ticker + ": TP2 hit @ " + str.tostring(tp2Price, format.mintick), alert.freq_once_per_bar_close)
 
 if hitTP3
     tp3Hit := true
     if showLabels
-        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP3 hit", style=label.style_none, textcolor=color.green, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
+        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP3 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
     if alertsAllowed
         alert(syminfo.ticker + ": TP3 hit @ " + str.tostring(tp3Price, format.mintick), alert.freq_once_per_bar_close)
 
 if hitSL
     slHit := true
     if showLabels
-        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? low : high, "SL hit", style=label.style_none, textcolor=color.red, size=size.tiny, yloc=tradeDir == 1 ? yloc.belowbar : yloc.abovebar))
+        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? low : high, "SL hit", style=label.style_none, textcolor=palBear, size=size.tiny, yloc=tradeDir == 1 ? yloc.belowbar : yloc.abovebar))
     if alertsAllowed
         alert(syminfo.ticker + ": Stop Loss hit @ " + str.tostring(slPrice, format.mintick), alert.freq_once_per_bar_close)
 
@@ -366,8 +385,8 @@ alertcondition(hitSL  and alertsAllowed, title="Stop Loss Hit", message="{{ticke
 // ---------------- PLOTTING ----------------
 // emaFast/emaSlow are still fully computed above and drive the trend score
 // either way — this toggle only controls whether the lines are drawn.
-plot(showTrendLines ? emaFast : na, "Fast EMA", color=color.new(color.aqua, 0))
-plot(showTrendLines ? emaSlow : na, "Slow EMA", color=color.new(color.fuchsia, 0))
+plot(showTrendLines ? emaFast : na, "Fast EMA", color=palEmaFast)
+plot(showTrendLines ? emaSlow : na, "Slow EMA", color=palEmaSlow)
 
 // (Signal markers are drawn as the green/red "▲ Grade ★★" badge above, matching
 // the reference screenshot's marker style rather than a plain plotshape.)
@@ -399,7 +418,7 @@ if showTable
     // below already reflects the full 5-factor blend, so this row is
     // deliberately independent of it rather than redundant with it.
     table.cell(infoTable, 0, 1, "Trend (HTF)", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 1, htfBull ? "Bullish" : "Bearish", bgcolor=panelBg, text_color=htfBull ? color.new(color.green, 10) : color.new(color.red, 10), text_halign=text.align_right)
+    table.cell(infoTable, 1, 1, htfBull ? "Bullish" : "Bearish", bgcolor=panelBg, text_color=htfBull ? palBull : palBear, text_halign=text.align_right)
 
     table.cell(infoTable, 0, 2, "Score", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
     table.cell(infoTable, 1, 2, str.tostring(score, "#.0") + "/10 · " + grade, bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
