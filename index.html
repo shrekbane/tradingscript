@@ -4,9 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GradeRunner — Trend + Momentum + Volatility + HTF Bias</title>
-<meta name="description" content="A Pine Script v6 indicator that grades every setup on a 0-10 confluence score, then auto-plots entry, stop loss, and three take-profit levels.">
-<link rel="icon" type="image/png" href="favicon.png">
-<link rel="apple-touch-icon" href="favicon.png">
+<meta name="description" content="A Pine Script v5 indicator that grades every setup on a 0-10 confluence score, then auto-plots entry, stop loss, and three take-profit levels.">
 <style>
   :root{
     --bg:#0b0f0e;
@@ -183,21 +181,18 @@
       <li><a href="#settings">Settings</a></li>
       <li><a href="#install">Install</a></li>
     </ul>
-    <div style="display:flex; gap:10px;">
-      <a class="btn ghost" href="https://t.me/graderunner" target="_blank" rel="noopener">Telegram</a>
-      <a class="btn ghost" href="https://github.com/shrekbane/graderunner" target="_blank" rel="noopener">View on GitHub</a>
-    </div>
+    <a class="btn ghost" href="https://github.com/shrekbane/graderunner" target="_blank" rel="noopener">View on GitHub</a>
   </div>
 </nav>
 
 <header class="hero">
   <div class="wrap">
-    <span class="eyebrow">Pine Script v6 · TradingView Indicator</span>
+    <span class="eyebrow">Pine Script v5 · TradingView Indicator</span>
     <h1>Grade every setup.<br>Trade the <span>graded</span> ones.</h1>
-    <p class="lede">GradeRunner scores every bar across five factors — local trend, higher-timeframe bias, momentum, MACD, and trend strength — into a single A+/A/B/C grade, then auto-plots entry, stop loss, and three take-profit levels the moment a qualifying signal fires.</p>
+    <p class="lede">GradeRunner scores every bar across five factors — trend, higher-timeframe bias, momentum, MACD, and trend strength — into a single A+/A/B/C grade, then auto-plots entry, stop loss, and three take-profit levels the moment a qualifying signal fires.</p>
     <div class="hero-actions">
       <a class="btn" href="#install">Get the script</a>
-      <a class="btn ghost" href="https://t.me/graderunner" target="_blank" rel="noopener">Get the signals →</a>
+      <a class="btn ghost" href="#how-it-works">See how it scores</a>
     </div>
     <div class="badge-row">
       <span class="pill">Non-repainting</span>
@@ -217,12 +212,12 @@
       <div class="factor">
         <span class="n">1</span>
         <h3>Local trend</h3>
-        <p>Fast EMA vs. slow EMA (9/21 by default). 2 points.</p>
+        <p>Fast EMA vs. slow EMA on your chart's own timeframe. 2 points.</p>
       </div>
       <div class="factor">
         <span class="n">2</span>
         <h3>Higher-timeframe bias</h3>
-        <p>Fast EMA vs. slow EMA computed on a separate, larger timeframe you choose. 2 points.</p>
+        <p>Same EMA relationship computed on a separate, larger timeframe you choose. 2 points.</p>
       </div>
       <div class="factor">
         <span class="n">3</span>
@@ -232,32 +227,24 @@
       <div class="factor">
         <span class="n">4</span>
         <h3>MACD histogram</h3>
-        <p>Confirms momentum direction independently of RSI, scaled by histogram size relative to ATR. Up to 2 points.</p>
+        <p>Confirms momentum direction independently of RSI. 2 points.</p>
       </div>
       <div class="factor">
         <span class="n">5</span>
         <h3>Trend strength (ADX/DMI)</h3>
-        <p>Only awarded if ADX &gt; 15 — i.e. a real trend actually exists — then scaled by how far above 15 it sits. Up to 2 points.</p>
+        <p>Only awarded if ADX &gt; 20 — i.e. a real trend actually exists. 2 points.</p>
       </div>
     </div>
 
     <table class="grade">
       <thead><tr><th>Score</th><th>Grade</th></tr></thead>
       <tbody>
-        <tr><td>≥ 9.0 / 10</td><td class="grade-cell">A+</td></tr>
-        <tr><td>≥ 7.0 / 10</td><td class="grade-cell">A</td></tr>
-        <tr><td>≥ 5.0 / 10</td><td class="grade-cell">B</td></tr>
-        <tr><td>&lt; 5.0 / 10</td><td class="grade-cell">C</td></tr>
+        <tr><td>≥ 9 / 10</td><td class="grade-cell">A+</td></tr>
+        <tr><td>≥ 7 / 10</td><td class="grade-cell">A</td></tr>
+        <tr><td>≥ 5 / 10</td><td class="grade-cell">B</td></tr>
+        <tr><td>&lt; 5 / 10</td><td class="grade-cell">C</td></tr>
       </tbody>
     </table>
-
-    <div class="callout" style="margin-top:24px;">
-      <b>Always on, not scored:</b> every signal, any grade, must also have the immediate chart-timeframe trend on its side, a genuinely strong trend somewhere (ADX &gt; 15), a decisive breakout beyond recent price action (Core Signal), and volatility within a normal range (Volatility regime gate) — regardless of how the rest of the score adds up. Momentum alone (RSI + MACD + ADX/DMI) can total 6 of the 10 points with zero help from either trend factor, which used to be enough to clear the B threshold purely on a momentum blip, even against the trend. These checks close that gap. (ADX's threshold was loosened from 20 to 15 to increase signal frequency in moderately-trending markets.)
-    </div>
-
-    <div class="callout" style="margin-top:16px;">
-      <b>HTF Bias — B-grade only:</b> A/A+ signals bypass the higher-timeframe agreement check (already very high overall confluence); B-grade signals must still agree with it. Requiring it unconditionally for every grade was tried and rolled back — the HTF EMA cross updates slowly relative to the immediate trend, so it blocked good reversals without filtering out bad setups any better.
-    </div>
   </div>
 </section>
 
@@ -274,8 +261,8 @@
       </div>
       <div class="feature">
         <div class="icon teal">▲</div>
-        <h3>Core Signal breakout requirement</h3>
-        <p>Always on — price must close decisively beyond the recent N-bar high/low (by a real ATR margin, not just a tick) before any signal fires, on top of the grade filter.</p>
+        <h3>Core Signal breakout gate</h3>
+        <p>Optional stricter trigger — price must close beyond the recent N-bar high/low before a signal fires, on top of the grade filter.</p>
       </div>
       <div class="feature">
         <div class="icon amber">〜</div>
@@ -298,19 +285,9 @@
         <p>Optionally keep a trail of past signal badges on the chart so you can audit how recent setups played out.</p>
       </div>
       <div class="feature">
-        <div class="icon red">◧</div>
-        <h3>Confirmed-close stop loss</h3>
-        <p>On by default — SL only counts as hit once a bar actually closes beyond it, cutting down on fake-outs from a wick-through pullback right after entry.</p>
-      </div>
-      <div class="feature">
-        <div class="icon amber">🌪</div>
-        <h3>Volatility regime gate</h3>
-        <p>Always on — blocks signals outright during abnormal volatility, whether an extreme spike (news, gaps) or a dead, illiquid session.</p>
-      </div>
-      <div class="feature">
-        <div class="icon teal">📊</div>
+        <div class="icon amber">📊</div>
         <h3>Grade win-rate stats</h3>
-        <p>On by default — a small panel tracking how often each grade (A+/A/B/C) reaches TP1 before SL, so you can see whether the grading is actually calibrated, not just trust it in the abstract.</p>
+        <p>A second panel tracks, per grade, how often setups reached TP1 before SL vs. the reverse — pure measurement, no effect on signal logic.</p>
       </div>
     </div>
   </div>
@@ -321,30 +298,18 @@
     <h2>Alerts, ready to wire up</h2>
     <p class="section-sub">Six alert conditions, each individually selectable in TradingView's Create Alert dialog. Here's what actually lands in your notifications:</p>
 
-    <div class="notif" style="border-color:rgba(38,166,154,0.35);">
-      <div class="nicon buy">➤</div>
-      <div style="flex:1">
-        <div class="notif-head"><div class="title">Don't want to set this up yourself?</div></div>
-        <div class="msg" style="font-family:inherit; color:var(--text-dim);">Follow the same signals on our public Telegram channel — no install, no configuration: <a href="https://t.me/graderunner" target="_blank" rel="noopener">t.me/graderunner</a></div>
-      </div>
-    </div>
-
-    <div class="callout" style="margin-bottom:24px;">
-      <b>Plan requirement:</b> these are TradingView "technical alerts" (driven by the script), which need at least the <b>Essential</b> plan. TradingView's free plan only supports basic price alerts, not indicator-based ones like these.
-    </div>
-
     <div class="notif">
       <div class="nicon buy">▲</div>
       <div style="flex:1">
         <div class="notif-head"><div class="title">GradeRunner: Buy Signal</div><div class="time">09:23</div></div>
-        <div class="msg">BUY signal (A ★★) on XAUUSD<br>Entry: 4020.975<br>TP1: 4024.660<br>TP2: 4028.345<br>SL: 4017.290</div>
+        <div class="msg">BUY signal (A ★★) on XAUUSD @ 4020.975</div>
       </div>
     </div>
     <div class="notif">
       <div class="nicon sell">▼</div>
       <div style="flex:1">
         <div class="notif-head"><div class="title">GradeRunner: Sell Signal</div><div class="time">09:31</div></div>
-        <div class="msg">SELL signal (B ★) on XAUUSD<br>Entry: 4016.690<br>TP1: 4012.405<br>TP2: 4008.120<br>SL: 4020.975</div>
+        <div class="msg">SELL signal (B ★) on XAUUSD @ 4016.690</div>
       </div>
     </div>
     <div class="notif">
@@ -361,7 +326,6 @@
         <div class="msg">XAUUSD: Stop Loss hit @ 4016.690</div>
       </div>
     </div>
-    <p class="section-sub" style="margin-top:20px; margin-bottom:0;">TP3 is left out of the entry alert on purpose — by the time price gets that far, you should already be watching the chart to manage it.</p>
   </div>
 </section>
 
@@ -391,10 +355,8 @@
         <ul>
           <li>Minimum grade (C / B / A / A+)</li>
           <li>SL and TP1–3 ATR multiples</li>
-          <li>Core Signal lookback + breakout margin (always on)</li>
+          <li>Core Signal toggle + lookback</li>
           <li>Volatility scaling + multipliers</li>
-          <li>Extreme high/low volatility ratio (always on)</li>
-          <li>Confirmed-close stop loss toggle</li>
         </ul>
       </div>
       <div class="settings-group">
@@ -410,7 +372,7 @@
         <ul>
           <li>Info table, signal markers, EMA lines</li>
           <li>Show previous setups + max count</li>
-          <li>Grade win-rate stats toggle</li>
+          <li>Grade win-rate stats panel</li>
         </ul>
       </div>
     </div>
