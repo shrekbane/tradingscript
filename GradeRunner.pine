@@ -1,5 +1,5 @@
 //@version=6
-indicator("GradeRunner (Trend+Momentum+Vol+HTF)", shorttitle="GradeRunner", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=50)
+indicator("GradeRunner (Trend+Momentum+Vol+HTF)", shorttitle="GradeRunner", overlay=true, max_lines_count=500, max_labels_count=500)
 
 // =========================================================================
 // A from-scratch, independently built confluence/scalping indicator inspired
@@ -131,14 +131,18 @@ emaFast = ta.ema(close, fastLen)
 emaSlow = ta.ema(close, slowLen)
 trendBull = emaFast > emaSlow
 
-// Higher timeframe bias (confirmed HTF bars only -> no intrabar repaint)
-htfEmaFast = request.security(syminfo.tickerid, htfTF, ta.ema(close, fastLen), lookahead=barmerge.lookahead_off)
-htfEmaSlow = request.security(syminfo.tickerid, htfTF, ta.ema(close, slowLen), lookahead=barmerge.lookahead_off)
+// Higher timeframe bias (confirmed HTF bars only -> no intrabar repaint).
+// Both EMAs are fetched in a single request.security() call (tuple return)
+// instead of two separate calls — fewer security requests, and guarantees
+// both series come from the exact same HTF bar.
+[htfEmaFast, htfEmaSlow] = request.security(syminfo.tickerid, htfTF, [ta.ema(close, fastLen), ta.ema(close, slowLen)], lookahead=barmerge.lookahead_off)
 htfBull = htfEmaFast > htfEmaSlow
 
 // ---------------- MOMENTUM ----------------
 rsiVal = ta.rsi(close, rsiLen)
-[macdLine, macdSignal, macdHist] = ta.macd(close, macdFast, macdSlow, macdSig)
+// Only the histogram is used for scoring — macdLine/macdSignal are discarded
+// via `_` placeholders rather than named and left unused.
+[_, _, macdHist] = ta.macd(close, macdFast, macdSlow, macdSig)
 
 // ---------------- TREND STRENGTH (DMI/ADX) ----------------
 [diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
@@ -260,54 +264,59 @@ var float tp2Price = na
 var float tp3Price = na
 var int   tradeDir = 0
 
-// Arrays (not single handles) so multiple past setups can be kept on chart
-// at once when "Show Previous Setups" is enabled.
-var line[]  entryLines = array.new_line()
-var line[]  slLines    = array.new_line()
-var line[]  tp1Lines   = array.new_line()
-var line[]  tp2Lines   = array.new_line()
-var line[]  tp3Lines   = array.new_line()
-var label[] entryLbls  = array.new_label()
-var label[] slLbls     = array.new_label()
-var label[] tp1Lbls    = array.new_label()
-var label[] tp2Lbls    = array.new_label()
-var label[] tp3Lbls    = array.new_label()
-var label[] badgeLbls  = array.new_label()
-var label[] hitLbls    = array.new_label()
+// The entry/SL/TP1-3 lines and labels only ever have ONE live instance at a
+// time — the current setup. The old array-based version pushed each new one
+// onto an array and then immediately trimmed it back down to 0 elements, on
+// every single signal. Arrays were the wrong tool for something that never
+// actually holds more than one item: a single mutable object (Setup) whose
+// old drawings get deleted and replaced does the same job more directly.
+// Only the badge (genuinely keeps multiple past entries when "Show Previous
+// Setups" is on) and the hit tags (2-3 can be alive at once mid-trade,
+// e.g. TP1 hit + TP2 hit before TP3/SL closes the setup) actually need arrays.
+type Setup
+    line  entryLine
+    line  slLine
+    line  tp1Line
+    line  tp2Line
+    line  tp3Line
+    label entryLbl
+    label slLbl
+    label tp1Lbl
+    label tp2Lbl
+    label tp3Lbl
 
-// Drop the oldest setup's drawings to make room, or clear everything if
-// history is off (so only the newest setup is ever shown). Entry/SL/TP
-// lines, labels, and the small "TP1/TP2/TP3/SL hit" tags are always cleared
-// down to just the current setup — only the direction/grade badge persists
-// across past setups — so history stays clean instead of piling up old
-// price-level and hit-tag clutter.
+var cur = Setup.new()
+
+var label[] badgeLbls = array.new_label()
+var label[] hitLbls   = array.new_label()
+
+// Shared by trimSetups() below — deletes down to `keep` elements from the
+// front of a label array. Arrays are reference types in Pine, so mutating
+// `arr` here mutates the caller's actual array.
+trimLabels(arr, keep) =>
+    while array.size(arr) > keep
+        label.delete(array.shift(arr))
+
+// Deletes the previous setup's entry/SL/TP drawings, if any exist, so the
+// next setup can draw fresh ones in their place.
+clearCurrentSetup() =>
+    if not na(cur.entryLine)
+        line.delete(cur.entryLine)
+        line.delete(cur.slLine)
+        line.delete(cur.tp1Line)
+        line.delete(cur.tp2Line)
+        line.delete(cur.tp3Line)
+        label.delete(cur.entryLbl)
+        label.delete(cur.slLbl)
+        label.delete(cur.tp1Lbl)
+        label.delete(cur.tp2Lbl)
+        label.delete(cur.tp3Lbl)
+
 trimSetups() =>
     keepBadge = showHistory ? maxSetups - 1 : 0
-    keepRest  = 0
-    while array.size(entryLines) > keepRest
-        line.delete(array.shift(entryLines))
-    while array.size(slLines) > keepRest
-        line.delete(array.shift(slLines))
-    while array.size(tp1Lines) > keepRest
-        line.delete(array.shift(tp1Lines))
-    while array.size(tp2Lines) > keepRest
-        line.delete(array.shift(tp2Lines))
-    while array.size(tp3Lines) > keepRest
-        line.delete(array.shift(tp3Lines))
-    while array.size(entryLbls) > keepRest
-        label.delete(array.shift(entryLbls))
-    while array.size(slLbls) > keepRest
-        label.delete(array.shift(slLbls))
-    while array.size(tp1Lbls) > keepRest
-        label.delete(array.shift(tp1Lbls))
-    while array.size(tp2Lbls) > keepRest
-        label.delete(array.shift(tp2Lbls))
-    while array.size(tp3Lbls) > keepRest
-        label.delete(array.shift(tp3Lbls))
-    while array.size(hitLbls) > keepRest
-        label.delete(array.shift(hitLbls))
-    while array.size(badgeLbls) > keepBadge
-        label.delete(array.shift(badgeLbls))
+    clearCurrentSetup()
+    trimLabels(hitLbls, 0)
+    trimLabels(badgeLbls, keepBadge)
 
 if newSignal
     entryPrice := close
@@ -330,17 +339,17 @@ if newSignal
         tpCol    = palNeutral
         slCol    = palBear
 
-        array.push(entryLines, line.new(bar_index, entryPrice, bar_index + extendBars, entryPrice, color=entryCol, style=line.style_solid,  width=1))
-        array.push(slLines,    line.new(bar_index, slPrice,    bar_index + extendBars, slPrice,    color=slCol,    style=line.style_solid,  width=1))
-        array.push(tp1Lines,   line.new(bar_index, tp1Price,   bar_index + extendBars, tp1Price,   color=tpCol,    style=line.style_dashed, width=1))
-        array.push(tp2Lines,   line.new(bar_index, tp2Price,   bar_index + extendBars, tp2Price,   color=tpCol,    style=line.style_dashed, width=1))
-        array.push(tp3Lines,   line.new(bar_index, tp3Price,   bar_index + extendBars, tp3Price,   color=tpCol,    style=line.style_dashed, width=1))
+        cur.entryLine := line.new(bar_index, entryPrice, bar_index + extendBars, entryPrice, color=entryCol, style=line.style_solid,  width=1)
+        cur.slLine    := line.new(bar_index, slPrice,    bar_index + extendBars, slPrice,    color=slCol,    style=line.style_solid,  width=1)
+        cur.tp1Line   := line.new(bar_index, tp1Price,   bar_index + extendBars, tp1Price,   color=tpCol,    style=line.style_dashed, width=1)
+        cur.tp2Line   := line.new(bar_index, tp2Price,   bar_index + extendBars, tp2Price,   color=tpCol,    style=line.style_dashed, width=1)
+        cur.tp3Line   := line.new(bar_index, tp3Price,   bar_index + extendBars, tp3Price,   color=tpCol,    style=line.style_dashed, width=1)
 
-        array.push(entryLbls, label.new(bar_index + extendBars, entryPrice, "ENTRY " + str.tostring(entryPrice, format.mintick), style=label.style_none, textcolor=entryCol, size=size.small, textalign=text.align_left))
-        array.push(slLbls,    label.new(bar_index + extendBars, slPrice,  str.tostring(slPrice, format.mintick),  style=label.style_none, textcolor=slCol, size=size.small, textalign=text.align_left))
-        array.push(tp1Lbls,   label.new(bar_index + extendBars, tp1Price, "TP1 " + str.tostring(tp1Price, format.mintick), style=label.style_none, textcolor=tpCol, size=size.small, textalign=text.align_left))
-        array.push(tp2Lbls,   label.new(bar_index + extendBars, tp2Price, "TP2 " + str.tostring(tp2Price, format.mintick), style=label.style_none, textcolor=tpCol, size=size.small, textalign=text.align_left))
-        array.push(tp3Lbls,   label.new(bar_index + extendBars, tp3Price, "TP3 " + str.tostring(tp3Price, format.mintick), style=label.style_none, textcolor=tpCol, size=size.small, textalign=text.align_left))
+        cur.entryLbl := label.new(bar_index + extendBars, entryPrice, "ENTRY " + str.tostring(entryPrice, format.mintick), style=label.style_none, textcolor=entryCol, size=size.small, textalign=text.align_left)
+        cur.slLbl    := label.new(bar_index + extendBars, slPrice,  str.tostring(slPrice, format.mintick),  style=label.style_none, textcolor=slCol, size=size.small, textalign=text.align_left)
+        cur.tp1Lbl   := label.new(bar_index + extendBars, tp1Price, "TP1 " + str.tostring(tp1Price, format.mintick), style=label.style_none, textcolor=tpCol, size=size.small, textalign=text.align_left)
+        cur.tp2Lbl   := label.new(bar_index + extendBars, tp2Price, "TP2 " + str.tostring(tp2Price, format.mintick), style=label.style_none, textcolor=tpCol, size=size.small, textalign=text.align_left)
+        cur.tp3Lbl   := label.new(bar_index + extendBars, tp3Price, "TP3 " + str.tostring(tp3Price, format.mintick), style=label.style_none, textcolor=tpCol, size=size.small, textalign=text.align_left)
 
         // Green/red badge, e.g. "▲ BUY B ★" / "▼ SELL B ★" — spells out the
         // direction so the grade letter (A+/A/B/C) never gets mistaken for
@@ -379,33 +388,33 @@ hitTP2 = inTrade and not newSignal and not tp2Hit and (tradeDir == 1 ? high >= t
 hitTP3 = inTrade and not newSignal and not tp3Hit and (tradeDir == 1 ? high >= tp3Price : low <= tp3Price)
 hitSL  = inTrade and not newSignal and not slHit  and (tradeDir == 1 ? low  <= slPrice  : high >= slPrice)
 
+// Shared by the four blocks below — pushes the "<level> hit" tag (if
+// enabled) and fires the alert (if allowed). isTP flips which side of the
+// bar the tag sits on: TP tags sit on the "profit" side, SL tags sit on the
+// opposite side.
+fireHit(labelText, alertText, price, col, isTP) =>
+    if showLabels
+        yVal   = isTP ? (tradeDir == 1 ? high : low) : (tradeDir == 1 ? low : high)
+        yPlace = isTP ? (tradeDir == 1 ? yloc.abovebar : yloc.belowbar) : (tradeDir == 1 ? yloc.belowbar : yloc.abovebar)
+        array.push(hitLbls, label.new(bar_index, yVal, labelText, style=label.style_none, textcolor=col, size=size.tiny, yloc=yPlace))
+    if alertsAllowed
+        alert(syminfo.ticker + ": " + alertText + " @ " + str.tostring(price, format.mintick), alert.freq_once_per_bar_close)
+
 if hitTP1
     tp1Hit := true
-    if showLabels
-        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP1 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
-    if alertsAllowed
-        alert(syminfo.ticker + ": TP1 hit @ " + str.tostring(tp1Price, format.mintick), alert.freq_once_per_bar_close)
+    fireHit("TP1 hit", "TP1 hit", tp1Price, palBull, true)
 
 if hitTP2
     tp2Hit := true
-    if showLabels
-        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP2 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
-    if alertsAllowed
-        alert(syminfo.ticker + ": TP2 hit @ " + str.tostring(tp2Price, format.mintick), alert.freq_once_per_bar_close)
+    fireHit("TP2 hit", "TP2 hit", tp2Price, palBull, true)
 
 if hitTP3
     tp3Hit := true
-    if showLabels
-        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP3 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
-    if alertsAllowed
-        alert(syminfo.ticker + ": TP3 hit @ " + str.tostring(tp3Price, format.mintick), alert.freq_once_per_bar_close)
+    fireHit("TP3 hit", "TP3 hit", tp3Price, palBull, true)
 
 if hitSL
     slHit := true
-    if showLabels
-        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? low : high, "SL hit", style=label.style_none, textcolor=palBear, size=size.tiny, yloc=tradeDir == 1 ? yloc.belowbar : yloc.abovebar))
-    if alertsAllowed
-        alert(syminfo.ticker + ": Stop Loss hit @ " + str.tostring(slPrice, format.mintick), alert.freq_once_per_bar_close)
+    fireHit("SL hit", "Stop Loss hit", slPrice, palBear, false)
 
 // Trade is considered closed once SL is hit, or once TP3 (final target) is hit
 // (this happens regardless of Alert Hours — only the alert itself is gated).
@@ -439,7 +448,9 @@ plot(showTrendLines ? emaSlow : na, "Slow EMA", color=palEmaSlow)
 // of this touches the underlying logic — Core Signal still gates the
 // breakout confirmation and Alert Hours still gates alerts exactly as
 // before; they're just no longer displayed in the table.
-if showTable
+// barstate.islast: the table only ever shows the latest state, so there's no
+// need to rewrite its cells on every historical bar — only on the current one.
+if showTable and barstate.islast
     var table infoTable = table.new(position.top_right, 2, 6, border_width=1, border_color=color.new(chart.fg_color, 80))
     panelBg  = color.new(chart.fg_color, 95)
     labelCol = color.new(chart.fg_color, 40)
