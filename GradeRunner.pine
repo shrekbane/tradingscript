@@ -63,6 +63,32 @@ highVolFactor = input.float(1.5,  "High Volatility Multiplier", step=0.05, group
 // how far the current trade has progressed (the original behavior).
 lockUntilTP1OrSL = input.bool(true, "Lock New Signals Until TP1 or SL Hit", group=grpSignal)
 
+// Confirmed-close stop loss: a sharp pullback right after entry can wick
+// through the SL intrabar and immediately reverse, stopping the trade out
+// on noise rather than a genuine breakdown. With this on, the SL only
+// counts as hit once a bar actually CLOSES beyond it (checked on confirmed
+// bars only) instead of the instant a wick touches it. Trade-off: on a
+// real breakdown, the exit confirms one bar later, so the realized loss
+// can run a little past the displayed SL. TP1/TP2/TP3 are deliberately
+// unaffected — profit-taking still triggers the instant price touches a
+// target, since eagerly locking in gains carries the opposite risk.
+confirmCloseSL = input.bool(true, "Require Confirmed Close for Stop Loss", group=grpSignal)
+
+// Pullback entry: instead of entering the instant the score/filters
+// qualify, this waits for price to retrace against the signal by a
+// configurable ATR amount (the "pullback"), then only confirms entry once
+// price closes back in the signal's favor beyond that pullback's extreme
+// (the "resumption"). This avoids entering right before a hard pullback
+// that could shake out the stop before the move actually gets going. A
+// qualifying signal "arms" a pending entry rather than firing immediately;
+// if the pullback + resumption doesn't complete within the timeout, the
+// pending entry is abandoned and a fresh qualifying signal is needed to
+// try again. On by default so new users get the more conservative entry
+// behavior out of the box, without needing to find and enable it first.
+usePullbackEntry = input.bool(true, "Wait for Pullback Before Entry", group=grpSignal)
+pullbackAtrMult  = input.float(0.5, "Pullback Depth (x ATR)", step=0.05, minval=0.05, group=grpSignal, active=usePullbackEntry)
+pullbackMaxBars  = input.int(10, "Max Bars to Wait for Pullback", minval=1, group=grpSignal, active=usePullbackEntry)
+
 // Alert Hours: restricts when alert()/alertcondition() are allowed to fire —
 // e.g. skip the Asian session, or only alert during your own trading hours.
 // This only gates alerts. The score, badge, table, and drawn levels keep
@@ -103,10 +129,17 @@ alertTimezone = tzToIANA(alertTimezoneSel)
 
 grpTable = "Display"
 showTable = input.bool(true, "Show Info Table", group=grpTable)
+// Lets phone/small-screen users shrink the table instead of being stuck
+// with a size tuned for desktop charts.
+tableSizeInput = input.string("Small", "Table Text Size", options=["Tiny", "Small", "Normal", "Large"], group=grpTable, active=showTable)
 showLabels = input.bool(true, "Show Signal Markers", group=grpTable)
 showTrendLines = input.bool(false, "Show Trend (EMA) Lines", group=grpTable)
 showHistory = input.bool(false, "Show Previous Setups (keep history)", group=grpTable)
 maxSetups   = input.int(5, "Max Setups to Keep (if history on)", minval=1, maxval=40, group=grpTable, active=showHistory)
+
+tableTextSize(sel) =>
+    sel == "Tiny" ? size.tiny : sel == "Normal" ? size.normal : sel == "Large" ? size.large : size.small
+tableSize = tableTextSize(tableSizeInput)
 
 // ---------------- COLOR PALETTE (light/dark theme safe) ----------------
 // One shared palette used everywhere on the chart, chosen so every color
@@ -233,20 +266,94 @@ canOverride = not lockUntilTP1OrSL or not inTrade or tp1Hit or slHit
 
 // ---------------- SIGNAL TRIGGER (fires only on confirmed bar close) ----------------
 // lastDir only advances when a signal actually fires (not just when the raw
-// score direction flips). That way, if Core Signal is on and the breakout
-// hasn't confirmed yet, the script keeps checking on every subsequent bar —
-// it doesn't get "stuck" thinking this direction was already handled.
+// score direction flips, and not just when a pullback entry arms). That
+// way, if Core Signal is on and the breakout hasn't confirmed yet — or if
+// Pullback Entry is on and still waiting — the script keeps checking on
+// every subsequent bar instead of getting "stuck" thinking this direction
+// was already handled.
 var int lastDir = 0
-newSignal = barstate.isconfirmed and direction != 0 and direction != lastDir and passesFilter and corePasses and canOverride
+rawQualifies = barstate.isconfirmed and direction != 0 and direction != lastDir and passesFilter and corePasses and canOverride
+
+// Pullback Entry state (persists across bars while a signal is "armed" and
+// waiting for its pullback + resumption).
+var bool  pending         = false
+var int   pendingDir      = 0
+var float pendingExtreme  = na   // best price reached in pendingDir's favor since arming
+var float pullbackExtreme = na   // worst price reached during the pullback itself; na until a pullback is confirmed
+var int   pendingBars     = 0
+
+newSignal = false
+entryDir  = 0
+
+if not usePullbackEntry
+    // Original behavior, unchanged: fire immediately when qualified.
+    newSignal := rawQualifies
+    entryDir  := direction
+else
+    // If the score reverses against an armed entry, abandon it — the setup
+    // that was being waited on no longer holds. Gated to confirmed bars
+    // only: direction recalculates every tick intrabar, so without this,
+    // a brief intrabar flicker could permanently cancel a waiting setup
+    // even if the score flips back by the time the bar actually closes.
+    if pending and barstate.isconfirmed and direction != 0 and direction != pendingDir
+        pending := false
+        pendingExtreme := na
+        pullbackExtreme := na
+        pendingBars := 0
+
+    justArmed = false
+    if not pending and rawQualifies
+        pending := true
+        pendingDir := direction
+        pendingExtreme := direction == 1 ? high : low
+        pullbackExtreme := na
+        pendingBars := 0
+        justArmed := true
+
+    // Process an existing pending arm starting the bar *after* it armed —
+    // confirmed bars only, so this stays non-repainting.
+    if pending and not justArmed and barstate.isconfirmed
+        pendingBars += 1
+        pendingExtreme := pendingDir == 1 ? math.max(pendingExtreme, high) : math.min(pendingExtreme, low)
+
+        if na(pullbackExtreme)
+            retr = pendingDir == 1 ? pendingExtreme - low : high - pendingExtreme
+            if retr >= pullbackAtrMult * atrVal
+                pullbackExtreme := pendingDir == 1 ? low : high
+        else
+            pullbackExtreme := pendingDir == 1 ? math.min(pullbackExtreme, low) : math.max(pullbackExtreme, high)
+
+        // Re-check the grade filter here too, not just at arming — the
+        // score keeps recalculating every bar while a signal waits for its
+        // pullback + resumption, so the grade that qualified it at arming
+        // time can drift below the minimum by the time price actually
+        // resumes. Without this check, a since-degraded setup could still
+        // fire and display whatever grade it happened to be at that later
+        // bar, silently ignoring the Minimum Grade setting.
+        resumed = not na(pullbackExtreme) and (pendingDir == 1 ? close > pullbackExtreme : close < pullbackExtreme) and passesFilter
+
+        if resumed
+            newSignal := true
+            entryDir  := pendingDir
+            pending := false
+            pendingExtreme := na
+            pullbackExtreme := na
+            pendingBars := 0
+        else if pendingBars >= pullbackMaxBars
+            // Gave up waiting — a fresh qualifying signal is needed to try again.
+            pending := false
+            pendingExtreme := na
+            pullbackExtreme := na
+            pendingBars := 0
 
 if newSignal
-    lastDir := direction
+    lastDir := entryDir
 
 // newSignal (and therefore buySignal/sellSignal) still fires around the
 // clock regardless of Alert Hours — the badge/lines/table keep working.
 // alertsAllowed only gates whether that signal is also allowed to alert.
-buySignal  = newSignal and direction == 1 and alertsAllowed
-sellSignal = newSignal and direction == -1 and alertsAllowed
+buySignal  = newSignal and entryDir == 1 and alertsAllowed
+sellSignal = newSignal and entryDir == -1 and alertsAllowed
 
 // alertcondition() must run unconditionally every bar (can't live inside an
 // if block) so these show up as pickable conditions in TradingView's
@@ -319,14 +426,18 @@ trimSetups() =>
     trimLabels(badgeLbls, keepBadge)
 
 if newSignal
+    // entryDir is this entry's direction — same as the live score direction
+    // when Pullback Entry is off, or the direction it was originally armed
+    // in when waiting for a pullback + resumption (which may differ from
+    // whatever the live score is doing by the time resumption confirms).
     entryPrice := close
-    tradeDir   := direction
+    tradeDir   := entryDir
     // volFactor stretches/compresses these ATR distances based on the
     // Low/Normal/High volatility read captured at the moment of entry.
-    slPrice    := direction == 1 ? close - atrVal * slMult  * volFactor : close + atrVal * slMult  * volFactor
-    tp1Price   := direction == 1 ? close + atrVal * tp1Mult * volFactor : close - atrVal * tp1Mult * volFactor
-    tp2Price   := direction == 1 ? close + atrVal * tp2Mult * volFactor : close - atrVal * tp2Mult * volFactor
-    tp3Price   := direction == 1 ? close + atrVal * tp3Mult * volFactor : close - atrVal * tp3Mult * volFactor
+    slPrice    := entryDir == 1 ? close - atrVal * slMult  * volFactor : close + atrVal * slMult  * volFactor
+    tp1Price   := entryDir == 1 ? close + atrVal * tp1Mult * volFactor : close - atrVal * tp1Mult * volFactor
+    tp2Price   := entryDir == 1 ? close + atrVal * tp2Mult * volFactor : close - atrVal * tp2Mult * volFactor
+    tp3Price   := entryDir == 1 ? close + atrVal * tp3Mult * volFactor : close - atrVal * tp3Mult * volFactor
     inTrade    := true
 
     trimSetups()
@@ -354,11 +465,11 @@ if newSignal
         // Green/red badge, e.g. "▲ BUY B ★" / "▼ SELL B ★" — spells out the
         // direction so the grade letter (A+/A/B/C) never gets mistaken for
         // a Buy/Sell abbreviation.
-        badgeArrow = direction == 1 ? "▲" : "▼"
-        badgeDir   = direction == 1 ? "BUY" : "SELL"
+        badgeArrow = entryDir == 1 ? "▲" : "▼"
+        badgeDir   = entryDir == 1 ? "BUY" : "SELL"
         badgeText  = badgeArrow + " " + badgeDir + " " + grade + " " + stars
-        badgeCol   = direction == 1 ? palBull : palBear
-        array.push(badgeLbls, label.new(bar_index, direction == 1 ? low : high, badgeText, style=direction == 1 ? label.style_label_up : label.style_label_down, color=badgeCol, textcolor=color.white, size=size.small))
+        badgeCol   = entryDir == 1 ? palBull : palBear
+        array.push(badgeLbls, label.new(bar_index, entryDir == 1 ? low : high, badgeText, style=entryDir == 1 ? label.style_label_up : label.style_label_down, color=badgeCol, textcolor=color.white, size=size.small))
 
     if alertsAllowed
         // Multi-line message: header (direction/grade/ticker) followed by
@@ -366,7 +477,7 @@ if newSignal
         // the time price is that far along, the user should already be
         // watching the chart to manage it, so it doesn't need to be in the
         // initial entry alert.
-        alertHeader = (direction == 1 ? "BUY signal (" : "SELL signal (") + grade + " " + stars + ") on " + syminfo.ticker
+        alertHeader = (entryDir == 1 ? "BUY signal (" : "SELL signal (") + grade + " " + stars + ") on " + syminfo.ticker
         alertMsg = alertHeader + "\n" +
                      "Entry: " + str.tostring(entryPrice, format.mintick) + "\n" +
                      "TP1: " + str.tostring(tp1Price, format.mintick) + "\n" +
@@ -383,10 +494,18 @@ if newSignal
     slHit  := false
 
 // Each fires exactly once per level, on the bar that first touches it.
+// TPs stay wick-based/intrabar on purpose — locking in profit the instant
+// price touches a target is the safer side to be eager on.
 hitTP1 = inTrade and not newSignal and not tp1Hit and (tradeDir == 1 ? high >= tp1Price : low <= tp1Price)
 hitTP2 = inTrade and not newSignal and not tp2Hit and (tradeDir == 1 ? high >= tp2Price : low <= tp2Price)
 hitTP3 = inTrade and not newSignal and not tp3Hit and (tradeDir == 1 ? high >= tp3Price : low <= tp3Price)
-hitSL  = inTrade and not newSignal and not slHit  and (tradeDir == 1 ? low  <= slPrice  : high >= slPrice)
+
+// SL condition depends on confirmCloseSL: either a confirmed bar closing
+// beyond the stop, or the original instant wick-touch check.
+slCondition = confirmCloseSL ?
+                 (barstate.isconfirmed and (tradeDir == 1 ? close <= slPrice : close >= slPrice)) :
+                 (tradeDir == 1 ? low <= slPrice : high >= slPrice)
+hitSL = inTrade and not newSignal and not slHit and slCondition
 
 // Shared by the four blocks below — pushes the "<level> hit" tag (if
 // enabled) and fires the alert (if allowed). isTP flips which side of the
@@ -456,24 +575,24 @@ if showTable and barstate.islast
     labelCol = color.new(chart.fg_color, 40)
     valueCol = color.new(chart.fg_color, 0)
 
-    table.cell(infoTable, 0, 0, inTrade ? "In trade" : "No active trade", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 0, inTrade ? (tradeDir == 1 ? "Long" : "Short") : "—", bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(infoTable, 0, 0, inTrade ? "In trade" : "No active trade", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 0, inTrade ? (tradeDir == 1 ? "Long" : "Short") : "—", bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
     // Shows the higher-timeframe bias specifically (not the combined
     // confluence direction) — a standalone "bigger picture" read. Score
     // below already reflects the full 5-factor blend, so this row is
     // deliberately independent of it rather than redundant with it.
-    table.cell(infoTable, 0, 1, "Trend (HTF)", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 1, htfBull ? "Bullish" : "Bearish", bgcolor=panelBg, text_color=htfBull ? palBull : palBear, text_halign=text.align_right)
+    table.cell(infoTable, 0, 1, "Trend (HTF)", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 1, htfBull ? "Bullish" : "Bearish", bgcolor=panelBg, text_color=htfBull ? palBull : palBear, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(infoTable, 0, 2, "Score", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 2, str.tostring(score, "#.0") + "/10 · " + grade, bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(infoTable, 0, 2, "Score", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 2, str.tostring(score, "#.0") + "/10 · " + grade, bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(infoTable, 0, 3, "Momentum", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 3, str.tostring(rsiVal, "#.0"), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(infoTable, 0, 3, "Momentum", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 3, str.tostring(rsiVal, "#.0"), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(infoTable, 0, 4, "Trend strength", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 4, str.tostring(adxVal, "#.0") + " · " + (adxStrong ? "Strong" : "Weak"), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(infoTable, 0, 4, "Trend strength", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 4, str.tostring(adxVal, "#.0") + " · " + (adxStrong ? "Strong" : "Weak"), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(infoTable, 0, 5, "Volatility", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 5, volState + (useVolScaling ? " · x" + str.tostring(volFactor, "#.00") : ""), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(infoTable, 0, 5, "Volatility", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 5, volState + (useVolScaling ? " · x" + str.tostring(volFactor, "#.00") : ""), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)

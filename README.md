@@ -98,6 +98,31 @@ By default, the confluence score keeps evaluating every bar regardless of whethe
 
 There's a deliberate one-bar lag built in: eligibility to override starts the bar *after* TP1/SL is actually touched, not the same bar, so this stays non-repainting.
 
+### 🛡️ Confirmed-close stop loss (on by default)
+
+A sharp pullback right after entry can wick through the SL intrabar and reverse immediately after — stopping the trade out on noise rather than a genuine breakdown.
+
+- **Require Confirmed Close for Stop Loss** (on by default): the SL only counts as hit once a bar actually *closes* beyond it, instead of the instant a wick touches it. Cuts down on fake-outs from brief pullbacks.
+- **Off**: the original behavior — SL triggers the instant price wicks through it intrabar, no confirmation wait.
+
+Trade-off either way: with it on, a genuine breakdown confirms one bar later, so the realized loss can run a little past the displayed SL price. TP1/TP2/TP3 are unaffected by this setting — profit-taking still triggers the instant price touches a target, since eagerly locking in gains carries the opposite risk from eagerly cutting losses.
+
+### 🌀 Wait for pullback before entry (on by default)
+
+Entering the instant the score/filters qualify can mean entering right before a hard pullback that shakes out the stop before the move actually gets going.
+
+With **Wait for Pullback Before Entry** on (the default), a qualifying signal doesn't enter immediately. Instead it "arms," then:
+
+1. **Pullback** — waits for price to retrace against the signal by **Pullback Depth (x ATR)** (default 0.5x ATR).
+2. **Resumption** — once that pullback has happened, enters only once price closes back in the signal's direction beyond the pullback's extreme.
+3. **Timeout** — if the pullback + resumption doesn't complete within **Max Bars to Wait for Pullback** (default 10), the armed signal is abandoned. A fresh qualifying signal is needed to try again — it doesn't keep waiting indefinitely.
+
+If the score reverses direction while a signal is armed and waiting, the armed signal is dropped immediately rather than carried forward.
+
+This targets the same problem as confirmed-close stop loss, from the entry side instead of the exit side. Trade-offs: entries become less frequent and less immediate (you may enter several bars after the original signal, at a different price), and a strong move that never pulls back will be missed entirely once the timeout is reached. The badge, alert, and drawn levels all reflect the direction the signal was originally armed in, even if the score has since shifted slightly by the time resumption confirms.
+
+Turn it **off** to restore the original behavior — entering the instant the score/filters qualify, no pullback wait.
+
 ---
 
 ## 🔔 Alerts
@@ -189,6 +214,8 @@ Settings that only matter when a related toggle is on (Core Signal's lookback, t
 - Core Signal toggle + lookback
 - Volatility scaling toggle + Low/High multipliers
 - Lock new signals until TP1 or SL hit (one-trade-at-a-time toggle)
+- Require confirmed close for stop loss (toggle)
+- Wait for pullback before entry (toggle) + pullback depth (x ATR) + max bars to wait
 
 **Alert Hours**
 - Only alert during selected hours (toggle)
@@ -197,6 +224,7 @@ Settings that only matter when a related toggle is on (Core Signal's lookback, t
 
 **Display**
 - Show info table, signal markers, EMA lines
+- Table text size (Tiny / Small / Normal / Large) — handy for shrinking the table down on phone screens
 - Show previous setups + how many to keep
 
 ---
@@ -208,6 +236,7 @@ Settings that only matter when a related toggle is on (Core Signal's lookback, t
 - **If signals feel too reactive, try Core Signal.** It trades signal frequency for confirmation — good for choppier instruments, less useful on trending ones where you want to catch the move early.
 - **Watch the Volatility row.** A signal firing during "High" volatility has meaningfully wider stops — factor that into position sizing.
 - **Test before you trust it.** Run it on your instrument and timeframe with alerts on for a while before using it to size real trades.
+- **On a phone?** Set Table Text Size to "Tiny" or "Small" so the info table doesn't crowd a smaller chart.
 
 ---
 
