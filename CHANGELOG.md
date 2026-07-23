@@ -4,6 +4,7 @@ All notable changes to GradeRunner are logged here, newest first. Entries are wr
 
 ## 2026-07-23
 
+- `docs`: add a note to `README.md` (Alerts section) and `index.html` (Alerts section) explaining that all six alert conditions are TradingView "technical alerts," which require at least the Essential plan — the free plan only supports basic price alerts, not indicator-driven ones.
 - `chore(cleanup)`: remove `TradingView_Description.txt` — no longer maintaining a TradingView publication description, focus is on the GitHub repo going forward.
 - `fix(pages)`: `index.html` was missed when the Buy/Sell alert message changed to the multi-line Entry/TP1/TP2/SL format — updated its alert preview cards to match, and added a note explaining why TP3 is left out. Also caught and fixed two stale "Pine Script v5" references (hero badge + meta description) left over from the v6 upgrade.
 - `refactor(history)`: replace the 10 parallel arrays used for entry/SL/TP1-3 lines and labels with a single Pine v6 user-defined type (`type Setup`) holding all 10 as fields, plus a `var cur = Setup.new()`. These never actually held more than one live item at a time (the old code pushed onto an array then immediately trimmed it back to 0 every signal), so a plain mutable object that gets its old drawings deleted and replaced is a more direct fit than an array. `badgeLbls` and `hitLbls` stay as arrays since they genuinely hold multiple items at once (badge history, and 2-3 concurrent hit tags mid-trade). No behavior or visual changes.
