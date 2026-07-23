@@ -34,17 +34,19 @@ tp2Mult = input.float(2.0, "TP2 (x ATR)", step=0.1, group=grpSignal)
 tp3Mult = input.float(3.0, "TP3 (x ATR)", step=0.1, group=grpSignal)
 extendBars = input.int(20, "Extend Lines (bars)", group=grpSignal)
 
-// Core Signal: an extra, stricter gate on top of the confluence score. The
-// score can flip direction purely because a lagging indicator crossed, with
-// no real price action behind it. When enabled, a signal additionally needs
-// a genuine breakout confirmation — price closing beyond the recent N-bar
-// high/low in the signal's direction — before it's allowed to fire. This
-// turns the score into a quality/grade filter and Core Signal into the
-// actual trigger/timing mechanism.
-coreSignalOn  = input.bool(false, "Core Signal (require breakout confirmation)", group=grpSignal)
-// v6's active= greys out this input in the settings panel whenever Core
-// Signal is off, since it does nothing until that toggle is on.
-coreLookback  = input.int(5, "Core Signal Lookback (bars)", minval=1, group=grpSignal, active=coreSignalOn)
+// Core Signal: an always-on requirement, same posture as the Local
+// Trend/ADX hard gates above — the score can flip direction purely because a
+// lagging indicator crossed, with no real price action behind it, so every
+// signal (any grade) additionally needs a genuine breakout: price closing
+// beyond the recent N-bar high/low in the signal's direction, by more than a
+// thin margin. This turns the score into a quality/grade filter and Core
+// Signal into the actual trigger/timing mechanism, unconditionally.
+coreLookback     = input.int(5, "Core Signal Lookback (bars)", minval=1, group=grpSignal)
+// A bare breakout — closing a single tick beyond the recent high/low — is
+// easy to produce with noise alone. Requiring the close to clear that level
+// by a real margin (in ATR terms, so it scales with the instrument/timeframe)
+// filters out marginal, barely-there breakouts and keeps only decisive ones.
+coreBreakoutAtrMult = input.float(0.1, "Core Signal Breakout Margin (x ATR)", step=0.05, minval=0.0, group=grpSignal)
 
 // Volatility scaling: SL/TP distances (in ATR multiples) get multiplied by
 // one of these depending on the current Low/Normal/High volatility read, so
@@ -74,20 +76,14 @@ lockUntilTP1OrSL = input.bool(true, "Lock New Signals Until TP1 or SL Hit", grou
 // target, since eagerly locking in gains carries the opposite risk.
 confirmCloseSL = input.bool(true, "Require Confirmed Close for Stop Loss", group=grpSignal)
 
-// Pullback entry: instead of entering the instant the score/filters
-// qualify, this waits for price to retrace against the signal by a
-// configurable ATR amount (the "pullback"), then only confirms entry once
-// price closes back in the signal's favor beyond that pullback's extreme
-// (the "resumption"). This avoids entering right before a hard pullback
-// that could shake out the stop before the move actually gets going. A
-// qualifying signal "arms" a pending entry rather than firing immediately;
-// if the pullback + resumption doesn't complete within the timeout, the
-// pending entry is abandoned and a fresh qualifying signal is needed to
-// try again. On by default so new users get the more conservative entry
-// behavior out of the box, without needing to find and enable it first.
-usePullbackEntry = input.bool(true, "Wait for Pullback Before Entry", group=grpSignal)
-pullbackAtrMult  = input.float(0.5, "Pullback Depth (x ATR)", step=0.05, minval=0.05, group=grpSignal, active=usePullbackEntry)
-pullbackMaxBars  = input.int(10, "Max Bars to Wait for Pullback", minval=1, group=grpSignal, active=usePullbackEntry)
+// Volatility regime gate: an always-on requirement, same posture as the
+// other hard gates above. Abnormally high volatility (a news spike or gap)
+// and abnormally low volatility (a dead, illiquid session) both make any
+// signal less trustworthy than usual, regardless of how the rest of the
+// score adds up — so signals are blocked outright at either extreme, using
+// the same ATR-vs-its-average ratio already computed for SL/TP scaling.
+extremeHighVolRatio = input.float(2.5,  "Extreme High Volatility Ratio (blocks signals above)", step=0.1,  minval=1.0, group=grpSignal)
+extremeLowVolRatio  = input.float(0.35, "Extreme Low Volatility Ratio (blocks signals below)",  step=0.05, minval=0.0, group=grpSignal)
 
 // Alert Hours: restricts when alert()/alertcondition() are allowed to fire —
 // e.g. skip the Asian session, or only alert during your own trading hours.
@@ -129,9 +125,17 @@ alertTimezone = tzToIANA(alertTimezoneSel)
 
 grpTable = "Display"
 showTable = input.bool(true, "Show Info Table", group=grpTable)
+// Tracks, per grade, how many setups reached TP1 before hitting SL vs. the
+// reverse — a running win-rate you can actually watch, rather than just
+// trusting the grading logic in the abstract. See the stats table section
+// further down for the win/loss definition and how it's tallied. Declared
+// here (before Table Text Size below) so that size input can grey out only
+// when BOTH tables are off, since it controls both.
+showGradeStats = input.bool(true, "Show Grade Win-Rate Stats", group=grpTable)
 // Lets phone/small-screen users shrink the table instead of being stuck
-// with a size tuned for desktop charts.
-tableSizeInput = input.string("Small", "Table Text Size", options=["Tiny", "Small", "Normal", "Large"], group=grpTable, active=showTable)
+// with a size tuned for desktop charts. Applies to both the info table
+// above and the grade win-rate stats table below.
+tableSizeInput = input.string("Small", "Table Text Size", options=["Tiny", "Small", "Normal", "Large"], group=grpTable, active=showTable or showGradeStats)
 showLabels = input.bool(true, "Show Signal Markers", group=grpTable)
 showTrendLines = input.bool(false, "Show Trend (EMA) Lines", group=grpTable)
 showHistory = input.bool(false, "Show Previous Setups (keep history)", group=grpTable)
@@ -164,12 +168,26 @@ emaFast = ta.ema(close, fastLen)
 emaSlow = ta.ema(close, slowLen)
 trendBull = emaFast > emaSlow
 
+// True only if `dir` agrees with the immediate chart-timeframe trend. Unlike
+// most of the checks below, this isn't an optional toggle — see the
+// signal-trigger section for why it's applied unconditionally to every
+// signal regardless of grade.
+localTrendOk(dir) => (dir == 1 and trendBull) or (dir == -1 and not trendBull)
+
 // Higher timeframe bias (confirmed HTF bars only -> no intrabar repaint).
 // Both EMAs are fetched in a single request.security() call (tuple return)
 // instead of two separate calls — fewer security requests, and guarantees
 // both series come from the exact same HTF bar.
 [htfEmaFast, htfEmaSlow] = request.security(syminfo.tickerid, htfTF, [ta.ema(close, fastLen), ta.ema(close, slowLen)], lookahead=barmerge.lookahead_off)
 htfBull = htfEmaFast > htfEmaSlow
+
+// True only if `dir` agrees with the higher-timeframe bias. Unlike
+// localTrendOk() above, this is NOT applied unconditionally — see htfGateOk
+// near rawQualifies further down, which only requires this for B-grade
+// signals (A/A+ bypass it). Unconditional HTF agreement was tried first and
+// found to add friction without improving quality, since the HTF EMA cross
+// is slow to update relative to the immediate trend/momentum.
+htfTrendOk(dir) => (dir == 1 and htfBull) or (dir == -1 and not htfBull)
 
 // ---------------- MOMENTUM ----------------
 rsiVal = ta.rsi(close, rsiLen)
@@ -179,7 +197,15 @@ rsiVal = ta.rsi(close, rsiLen)
 
 // ---------------- TREND STRENGTH (DMI/ADX) ----------------
 [diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
-adxStrong = adxVal > 20
+// Lowered from 20 to 15: at 20, this hard gate was blocking moderately-
+// trending markets outright regardless of how strong every other factor
+// scored, cutting into signal frequency more than it needed to. 15 still
+// screens out genuinely flat/choppy conditions, just with a bit more room.
+// Kept as a plain variable (not an input) so the scoring scale below stays
+// anchored to whatever this is — if you want it user-adjustable later, this
+// is the one line to turn into an input.
+adxThreshold = 15
+adxStrong = adxVal > adxThreshold
 diBull = diPlus > diMinus
 
 // ---------------- VOLATILITY ----------------
@@ -191,17 +217,27 @@ volState  = volRatio >= 1.2 ? "High" : volRatio <= 0.8 ? "Low" : "Normal"
 // Multiplier applied on top of the SL/TP ATR multiples below, based on volState.
 volFactor = not useVolScaling ? 1.0 : volState == "High" ? highVolFactor : volState == "Low" ? lowVolFactor : 1.0
 
+// True unless volRatio is at an extreme far beyond the Low/Normal/High
+// classification above (that one's for SL/TP sizing; this one's a much
+// wider band meant to catch genuinely abnormal conditions, not just
+// "somewhat more volatile than usual").
+volRegimeOk = volRatio <= extremeHighVolRatio and volRatio >= extremeLowVolRatio
+
 // ---------------- CONFLUENCE SCORE (0-10, split bull/bear) ----------------
 bullPts = 0.0
 bearPts = 0.0
 
 // 1) Local trend (2 pts)
-bullPts += trendBull ? 2.0 : 0.0
-bearPts += trendBull ? 0.0 : 2.0
+trendBullPts = trendBull ? 2.0 : 0.0
+trendBearPts = trendBull ? 0.0 : 2.0
+bullPts += trendBullPts
+bearPts += trendBearPts
 
 // 2) HTF bias (2 pts)
-bullPts += htfBull ? 2.0 : 0.0
-bearPts += htfBull ? 0.0 : 2.0
+htfBullPts = htfBull ? 2.0 : 0.0
+htfBearPts = htfBull ? 0.0 : 2.0
+bullPts += htfBullPts
+bearPts += htfBearPts
 
 // 3) RSI momentum (up to 2 pts, scaled by distance from 50)
 rsiBullPts = rsiVal > 50 ? math.min((rsiVal - 50) / 25 * 2, 2.0) : 0.0
@@ -209,14 +245,37 @@ rsiBearPts = rsiVal < 50 ? math.min((50 - rsiVal) / 25 * 2, 2.0) : 0.0
 bullPts += rsiBullPts
 bearPts += rsiBearPts
 
-// 4) MACD histogram direction (2 pts)
-bullPts += macdHist > 0 ? 2.0 : 0.0
-bearPts += macdHist > 0 ? 0.0 : 2.0
+// 4) MACD histogram magnitude (up to 2 pts, scaled by size relative to ATR)
+// A histogram that just barely crossed zero shouldn't score the same as one
+// that's clearly expanding — scaled the same way RSI is above, just anchored
+// to ATR (a price-scaled measure) instead of RSI's fixed 0-100 range. 0.5x
+// ATR is treated as "full strength" (2 pts); anything larger still caps at 2.
+macdBullPts = macdHist > 0 ? math.min(macdHist / (0.5 * atrVal) * 2, 2.0) : 0.0
+macdBearPts = macdHist < 0 ? math.min(-macdHist / (0.5 * atrVal) * 2, 2.0) : 0.0
+bullPts += macdBullPts
+bearPts += macdBearPts
 
-// 5) ADX/DMI strength confirmation (2 pts, only if trend is strong)
+// 5) ADX/DMI strength confirmation (up to 2 pts, only if trend is strong)
+// Scaled by how far ADX sits above adxThreshold (the "strong trend" cutoff,
+// 15) rather than a flat 2 points — a bare 15.1 barely counts, whereas a
+// strongly trending market (ADX 35+) earns full points. Same distance-scaled
+// shape as RSI and MACD above. Anchored to adxThreshold (not a separate
+// literal) so this always starts scoring from 0 right at the hard-gate
+// boundary — can't go negative, since this only ever runs when adxStrong is
+// already true (adxVal > adxThreshold). This only affects the SCORED
+// contribution; the adxStrong hard requirement below is unchanged and still
+// binary. Declared outside the `if` (defaulting to 0.0) rather than only
+// inside it, so these stay readable further down for the factor-diagnostics
+// plots — behavior is unchanged either way: when adxStrong is false, both
+// stay 0.0 and contribute nothing, same as the block simply not running
+// before.
+adxBullPts = 0.0
+adxBearPts = 0.0
 if adxStrong
-    bullPts += diBull ? 2.0 : 0.0
-    bearPts += diBull ? 0.0 : 2.0
+    adxBullPts := diBull ? math.min((adxVal - adxThreshold) / 20 * 2, 2.0) : 0.0
+    adxBearPts := not diBull ? math.min((adxVal - adxThreshold) / 20 * 2, 2.0) : 0.0
+bullPts += adxBullPts
+bearPts += adxBearPts
 
 score     = math.max(bullPts, bearPts)
 direction = bullPts > bearPts ? 1 : bullPts < bearPts ? -1 : 0
@@ -229,14 +288,40 @@ grade = gradeOf(score)
 gradeRank(g) => g == "A+" ? 4 : g == "A" ? 3 : g == "B" ? 2 : 1
 passesFilter = gradeRank(grade) >= gradeRank(minGradeInput)
 
+// Local Trend and ADX/DMI strength each also contribute points to the score
+// above, but that alone isn't enough to guarantee a B-or-better signal is
+// actually trend-aligned — RSI + MACD + ADX/DMI can total 6 of the
+// 10 points on their own with zero help from either trend factor, which is
+// enough to clear the default B threshold (5) purely on momentum,
+// even against the immediate trend. localTrendOk()/adxStrong/corePasses/
+// volRegimeOk are all applied as hard requirements (see rawQualifies below)
+// precisely to close that gap regardless of how the score adds up: the
+// immediate trend must agree, ADX
+// must show real strength, Core Signal (defined further down) must show a
+// genuine breakout, and volatility must be in a normal range — on top of
+// whatever the score/grade otherwise says.
+//
+// HTF Bias is handled slightly differently (see htfGateOk below): requiring
+// unconditional agreement made the gate stricter without actually improving
+// quality — the HTF EMA cross is slow to update, so it blocked genuinely good
+// reversals that the immediate trend/momentum had already caught, while still
+// letting weak setups through whenever the (possibly stale) HTF read happened
+// to agree. Restricting the requirement to B-grade signals only — letting
+// A/A+ signals, which already have very high overall confluence, bypass it —
+// keeps the check where it likely matters most (marginal B setups) without
+// blocking the strongest setups on a lagging HTF snapshot.
+
 starsOf(g) =>
     g == "A+" ? "★★★" : g == "A" ? "★★" : g == "B" ? "★" : ""
 stars = starsOf(grade)
 
-// ---------------- CORE SIGNAL (breakout confirmation gate) ----------------
-coreBullTrigger = close > ta.highest(high[1], coreLookback)
-coreBearTrigger = close < ta.lowest(low[1], coreLookback)
-corePasses = not coreSignalOn or (direction == 1 ? coreBullTrigger : direction == -1 ? coreBearTrigger : false)
+// ---------------- CORE SIGNAL (breakout confirmation gate, always on) ----------------
+// coreBreakoutAtrMult adds a real margin on top of the bare N-bar high/low,
+// so a close that just barely ticks past the level doesn't count — it has to
+// clear it decisively, scaled to the instrument/timeframe via ATR.
+coreBullTrigger = close > ta.highest(high[1], coreLookback) + coreBreakoutAtrMult * atrVal
+coreBearTrigger = close < ta.lowest(low[1], coreLookback) - coreBreakoutAtrMult * atrVal
+corePasses = direction == 1 ? coreBullTrigger : direction == -1 ? coreBearTrigger : false
 
 // ---------------- ALERT HOURS ----------------
 // Gates ONLY the alert()/alertcondition() calls further down — the score,
@@ -266,94 +351,44 @@ canOverride = not lockUntilTP1OrSL or not inTrade or tp1Hit or slHit
 
 // ---------------- SIGNAL TRIGGER (fires only on confirmed bar close) ----------------
 // lastDir only advances when a signal actually fires (not just when the raw
-// score direction flips, and not just when a pullback entry arms). That
-// way, if Core Signal is on and the breakout hasn't confirmed yet — or if
-// Pullback Entry is on and still waiting — the script keeps checking on
-// every subsequent bar instead of getting "stuck" thinking this direction
-// was already handled.
+// score direction flips), so the script keeps checking on every subsequent
+// bar instead of getting "stuck" thinking this direction was already
+// handled — relevant since the breakout in corePasses below can take extra
+// bars to confirm after direction first flips.
 var int lastDir = 0
-rawQualifies = barstate.isconfirmed and direction != 0 and direction != lastDir and passesFilter and corePasses and canOverride
+// localTrendOk(direction), adxStrong, corePasses, and volRegimeOk are all
+// unconditional hard requirements, not part of the score/grade — Local Trend
+// and ADX/DMI strength both already contribute points to the confluence
+// score above, but a strong-enough combination of the OTHER factors (RSI +
+// MACD + ADX/DMI can total 6 of the 10 points entirely on their own, with
+// zero contribution from either trend factor) could otherwise still win
+// direction and clear the Minimum Grade filter while the immediate chart
+// trend is pointing the other way, or while ADX shows no real trend at all
+// (a flat/choppy market), with no genuine breakout behind it, or during
+// abnormal volatility (a news spike/gap, or a dead/illiquid session).
+//
+// htfGateOk is a *conditional* hard requirement: A/A+ signals bypass it
+// entirely (already high overall confluence), so it only actually applies to
+// B-grade signals. Unconditional HTF agreement was tried and found to add
+// friction without improving quality — the HTF EMA cross is slow to update,
+// so it blocked good reversals the immediate trend had already caught while
+// still letting weak setups through whenever the stale HTF read happened to
+// agree. Restricting it to B-grade only keeps the check where it likely
+// matters most without blocking the strongest setups.
+htfGateOk = gradeRank(grade) >= gradeRank("A") or htfTrendOk(direction)
 
-// Pullback Entry state (persists across bars while a signal is "armed" and
-// waiting for its pullback + resumption).
-var bool  pending         = false
-var int   pendingDir      = 0
-var float pendingExtreme  = na   // best price reached in pendingDir's favor since arming
-var float pullbackExtreme = na   // worst price reached during the pullback itself; na until a pullback is confirmed
-var int   pendingBars     = 0
+rawQualifies = barstate.isconfirmed and direction != 0 and direction != lastDir and passesFilter and corePasses and canOverride and localTrendOk(direction) and htfGateOk and adxStrong and volRegimeOk
 
-newSignal = false
-entryDir  = 0
-
-if not usePullbackEntry
-    // Original behavior, unchanged: fire immediately when qualified.
-    newSignal := rawQualifies
-    entryDir  := direction
-else
-    // If the score reverses against an armed entry, abandon it — the setup
-    // that was being waited on no longer holds. Gated to confirmed bars
-    // only: direction recalculates every tick intrabar, so without this,
-    // a brief intrabar flicker could permanently cancel a waiting setup
-    // even if the score flips back by the time the bar actually closes.
-    if pending and barstate.isconfirmed and direction != 0 and direction != pendingDir
-        pending := false
-        pendingExtreme := na
-        pullbackExtreme := na
-        pendingBars := 0
-
-    justArmed = false
-    if not pending and rawQualifies
-        pending := true
-        pendingDir := direction
-        pendingExtreme := direction == 1 ? high : low
-        pullbackExtreme := na
-        pendingBars := 0
-        justArmed := true
-
-    // Process an existing pending arm starting the bar *after* it armed —
-    // confirmed bars only, so this stays non-repainting.
-    if pending and not justArmed and barstate.isconfirmed
-        pendingBars += 1
-        pendingExtreme := pendingDir == 1 ? math.max(pendingExtreme, high) : math.min(pendingExtreme, low)
-
-        if na(pullbackExtreme)
-            retr = pendingDir == 1 ? pendingExtreme - low : high - pendingExtreme
-            if retr >= pullbackAtrMult * atrVal
-                pullbackExtreme := pendingDir == 1 ? low : high
-        else
-            pullbackExtreme := pendingDir == 1 ? math.min(pullbackExtreme, low) : math.max(pullbackExtreme, high)
-
-        // Re-check the grade filter here too, not just at arming — the
-        // score keeps recalculating every bar while a signal waits for its
-        // pullback + resumption, so the grade that qualified it at arming
-        // time can drift below the minimum by the time price actually
-        // resumes. Without this check, a since-degraded setup could still
-        // fire and display whatever grade it happened to be at that later
-        // bar, silently ignoring the Minimum Grade setting.
-        resumed = not na(pullbackExtreme) and (pendingDir == 1 ? close > pullbackExtreme : close < pullbackExtreme) and passesFilter
-
-        if resumed
-            newSignal := true
-            entryDir  := pendingDir
-            pending := false
-            pendingExtreme := na
-            pullbackExtreme := na
-            pendingBars := 0
-        else if pendingBars >= pullbackMaxBars
-            // Gave up waiting — a fresh qualifying signal is needed to try again.
-            pending := false
-            pendingExtreme := na
-            pullbackExtreme := na
-            pendingBars := 0
+newSignal = rawQualifies
 
 if newSignal
-    lastDir := entryDir
+    lastDir := direction
 
 // newSignal (and therefore buySignal/sellSignal) still fires around the
 // clock regardless of Alert Hours — the badge/lines/table keep working.
 // alertsAllowed only gates whether that signal is also allowed to alert.
-buySignal  = newSignal and entryDir == 1 and alertsAllowed
-sellSignal = newSignal and entryDir == -1 and alertsAllowed
+buySignal  = newSignal and direction == 1 and alertsAllowed
+sellSignal = newSignal and direction == -1 and alertsAllowed
 
 // alertcondition() must run unconditionally every bar (can't live inside an
 // if block) so these show up as pickable conditions in TradingView's
@@ -370,6 +405,11 @@ var float tp1Price = na
 var float tp2Price = na
 var float tp3Price = na
 var int   tradeDir = 0
+// The grade this trade actually entered at — captured once at entry, since
+// the live `grade` keeps recalculating every bar and would otherwise drift
+// out of sync with which grade's win/loss tally this trade should count
+// toward by the time it resolves.
+var string tradeGrade = "C"
 
 // The entry/SL/TP1-3 lines and labels only ever have ONE live instance at a
 // time — the current setup. The old array-based version pushed each new one
@@ -426,18 +466,15 @@ trimSetups() =>
     trimLabels(badgeLbls, keepBadge)
 
 if newSignal
-    // entryDir is this entry's direction — same as the live score direction
-    // when Pullback Entry is off, or the direction it was originally armed
-    // in when waiting for a pullback + resumption (which may differ from
-    // whatever the live score is doing by the time resumption confirms).
     entryPrice := close
-    tradeDir   := entryDir
+    tradeDir   := direction
+    tradeGrade := grade
     // volFactor stretches/compresses these ATR distances based on the
     // Low/Normal/High volatility read captured at the moment of entry.
-    slPrice    := entryDir == 1 ? close - atrVal * slMult  * volFactor : close + atrVal * slMult  * volFactor
-    tp1Price   := entryDir == 1 ? close + atrVal * tp1Mult * volFactor : close - atrVal * tp1Mult * volFactor
-    tp2Price   := entryDir == 1 ? close + atrVal * tp2Mult * volFactor : close - atrVal * tp2Mult * volFactor
-    tp3Price   := entryDir == 1 ? close + atrVal * tp3Mult * volFactor : close - atrVal * tp3Mult * volFactor
+    slPrice    := direction == 1 ? close - atrVal * slMult  * volFactor : close + atrVal * slMult  * volFactor
+    tp1Price   := direction == 1 ? close + atrVal * tp1Mult * volFactor : close - atrVal * tp1Mult * volFactor
+    tp2Price   := direction == 1 ? close + atrVal * tp2Mult * volFactor : close - atrVal * tp2Mult * volFactor
+    tp3Price   := direction == 1 ? close + atrVal * tp3Mult * volFactor : close - atrVal * tp3Mult * volFactor
     inTrade    := true
 
     trimSetups()
@@ -465,11 +502,11 @@ if newSignal
         // Green/red badge, e.g. "▲ BUY B ★" / "▼ SELL B ★" — spells out the
         // direction so the grade letter (A+/A/B/C) never gets mistaken for
         // a Buy/Sell abbreviation.
-        badgeArrow = entryDir == 1 ? "▲" : "▼"
-        badgeDir   = entryDir == 1 ? "BUY" : "SELL"
+        badgeArrow = direction == 1 ? "▲" : "▼"
+        badgeDir   = direction == 1 ? "BUY" : "SELL"
         badgeText  = badgeArrow + " " + badgeDir + " " + grade + " " + stars
-        badgeCol   = entryDir == 1 ? palBull : palBear
-        array.push(badgeLbls, label.new(bar_index, entryDir == 1 ? low : high, badgeText, style=entryDir == 1 ? label.style_label_up : label.style_label_down, color=badgeCol, textcolor=color.white, size=size.small))
+        badgeCol   = direction == 1 ? palBull : palBear
+        array.push(badgeLbls, label.new(bar_index, direction == 1 ? low : high, badgeText, style=direction == 1 ? label.style_label_up : label.style_label_down, color=badgeCol, textcolor=color.white, size=size.small))
 
     if alertsAllowed
         // Multi-line message: header (direction/grade/ticker) followed by
@@ -477,7 +514,7 @@ if newSignal
         // the time price is that far along, the user should already be
         // watching the chart to manage it, so it doesn't need to be in the
         // initial entry alert.
-        alertHeader = (entryDir == 1 ? "BUY signal (" : "SELL signal (") + grade + " " + stars + ") on " + syminfo.ticker
+        alertHeader = (direction == 1 ? "BUY signal (" : "SELL signal (") + grade + " " + stars + ") on " + syminfo.ticker
         alertMsg = alertHeader + "\n" +
                      "Entry: " + str.tostring(entryPrice, format.mintick) + "\n" +
                      "TP1: " + str.tostring(tp1Price, format.mintick) + "\n" +
@@ -487,6 +524,14 @@ if newSignal
 
 // ---------------- TP / SL HIT DETECTION & ALERTS ----------------
 // (tp1Hit/tp2Hit/tp3Hit/slHit are declared earlier, alongside inTrade.)
+// Win/loss tally per grade (index 0=C, 1=B, 2=A, 3=A+, matching
+// gradeRank(g) - 1). "Win" is defined as reaching TP1 before SL is hit —
+// simple, unambiguous, and matches the fact that TP1 is the first real
+// checkpoint every setup has to clear. See the hitTP1/hitSL blocks below for
+// how each is tallied exactly once per trade.
+var int[] gradeWins   = array.new_int(4, 0)
+var int[] gradeLosses = array.new_int(4, 0)
+
 if newSignal
     tp1Hit := false
     tp2Hit := false
@@ -522,6 +567,11 @@ fireHit(labelText, alertText, price, col, isTP) =>
 if hitTP1
     tp1Hit := true
     fireHit("TP1 hit", "TP1 hit", tp1Price, palBull, true)
+    // Reaching TP1 counts as a "win" for this trade's entry grade, tallied
+    // once — hitTP1 only fires the bar TP1 is first touched (guarded by
+    // `not tp1Hit` above), so this can't double-count on later bars.
+    winIdx = gradeRank(tradeGrade) - 1
+    array.set(gradeWins, winIdx, array.get(gradeWins, winIdx) + 1)
 
 if hitTP2
     tp2Hit := true
@@ -534,6 +584,14 @@ if hitTP3
 if hitSL
     slHit := true
     fireHit("SL hit", "Stop Loss hit", slPrice, palBear, false)
+    // Only counts as a "loss" if SL was hit before TP1 was ever reached —
+    // if both happen to trigger on the same bar, the `if hitTP1` block above
+    // (which runs first) has already set tp1Hit true by the time this
+    // check runs, so it's already been tallied as a win instead, and won't
+    // also count here.
+    if not tp1Hit
+        lossIdx = gradeRank(tradeGrade) - 1
+        array.set(gradeLosses, lossIdx, array.get(gradeLosses, lossIdx) + 1)
 
 // Trade is considered closed once SL is hit, or once TP3 (final target) is hit
 // (this happens regardless of Alert Hours — only the alert itself is gated).
@@ -551,6 +609,23 @@ alertcondition(hitSL  and alertsAllowed, title="Stop Loss Hit", message="{{ticke
 plot(showTrendLines ? emaFast : na, "Fast EMA", color=palEmaFast)
 plot(showTrendLines ? emaSlow : na, "Slow EMA", color=palEmaSlow)
 
+// ---------------- FACTOR DIAGNOSTICS (Data Window only) ----------------
+// Net point contribution (bull minus bear) for each of the 5 confluence
+// factors, all in the same -2..+2 range so they're directly comparable at a
+// glance. display=display.data_window keeps these off the chart, price
+// scale, and legend entirely — they only show up when you hover a bar and
+// open TradingView's Data Window panel. This makes it possible to scrub
+// back to the exact bar a past signal fired on and see which factors
+// actually drove that grade (e.g. a B carried mostly by HTF Bias + RSI with
+// weak ADX support), without changing any scoring or signal logic.
+plot(trendBullPts - trendBearPts, "Diag: Local Trend (pts)",    display=display.data_window)
+plot(htfBullPts   - htfBearPts,   "Diag: HTF Bias (pts)",       display=display.data_window)
+plot(rsiBullPts   - rsiBearPts,   "Diag: RSI Momentum (pts)",   display=display.data_window)
+plot(macdBullPts  - macdBearPts,  "Diag: MACD Histogram (pts)", display=display.data_window)
+plot(adxBullPts   - adxBearPts,   "Diag: Trend Strength (pts)", display=display.data_window)
+plot(score,     "Diag: Confluence Score", display=display.data_window)
+plot(direction, "Diag: Direction (1=Bull, -1=Bear, 0=None)", display=display.data_window)
+
 // (Signal markers are drawn as the green/red "▲ Grade ★★" badge above, matching
 // the reference screenshot's marker style rather than a plain plotshape.)
 
@@ -561,19 +636,22 @@ plot(showTrendLines ? emaSlow : na, "Slow EMA", color=palEmaSlow)
 // either way instead of being tuned for one theme.
 //
 // Trimmed down to rows that actually change with the market. Dropped: the
-// branding/title row (static text, no market info), Core Signal (a static
-// echo of a setting you already configured, not live data), and Alerts
-// (only meaningful if Alert Hours is on, and dead weight otherwise). None
-// of this touches the underlying logic — Core Signal still gates the
-// breakout confirmation and Alert Hours still gates alerts exactly as
-// before; they're just no longer displayed in the table.
+// branding/title row (static text, no market info), and Alerts (only
+// meaningful if Alert Hours is on, and dead weight otherwise). None of this
+// touches the underlying logic — Core Signal's breakout requirement and
+// Alert Hours' gating both still apply exactly as before; they're just not
+// displayed as their own table rows.
 // barstate.islast: the table only ever shows the latest state, so there's no
 // need to rewrite its cells on every historical bar — only on the current one.
+// Shared by both this table and the grade win-rate stats table below, so
+// the two panels stay visually consistent without duplicating the same
+// three color expressions twice.
+panelBg  = color.new(chart.fg_color, 95)
+labelCol = color.new(chart.fg_color, 40)
+valueCol = color.new(chart.fg_color, 0)
+
 if showTable and barstate.islast
     var table infoTable = table.new(position.top_right, 2, 6, border_width=1, border_color=color.new(chart.fg_color, 80))
-    panelBg  = color.new(chart.fg_color, 95)
-    labelCol = color.new(chart.fg_color, 40)
-    valueCol = color.new(chart.fg_color, 0)
 
     table.cell(infoTable, 0, 0, inTrade ? "In trade" : "No active trade", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
     table.cell(infoTable, 1, 0, inTrade ? (tradeDir == 1 ? "Long" : "Short") : "—", bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
@@ -596,3 +674,35 @@ if showTable and barstate.islast
 
     table.cell(infoTable, 0, 5, "Volatility", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
     table.cell(infoTable, 1, 5, volState + (useVolScaling ? " · x" + str.tostring(volFactor, "#.00") : ""), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
+
+// ---------------- GRADE WIN-RATE STATS ----------------
+// A separate small panel (bottom-right, so it doesn't collide with the info
+// table above) showing, per grade, how many setups reached TP1 before SL
+// vs. the reverse — see the gradeWins/gradeLosses tallying in the TP/SL hit
+// detection section above for exactly how "win" and "loss" are defined and
+// counted. This is pure measurement: it doesn't change signal behavior at
+// all, and only reflects trades that have actually occurred since the
+// script was added to the chart (not simulated/backtested history).
+gradeWinRateStr(idx) =>
+    w = array.get(gradeWins, idx)
+    l = array.get(gradeLosses, idx)
+    tot = w + l
+    tot == 0 ? "—" : str.tostring(w) + "/" + str.tostring(tot) + " (" + str.tostring(w / tot * 100, "#.0") + "%)"
+
+if showGradeStats and barstate.islast
+    var table statsTable = table.new(position.bottom_right, 2, 5, border_width=1, border_color=color.new(chart.fg_color, 80))
+
+    table.cell(statsTable, 0, 0, "Grade", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(statsTable, 1, 0, "Win Rate", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_right, text_size=tableSize)
+
+    table.cell(statsTable, 0, 1, "A+", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(statsTable, 1, 1, gradeWinRateStr(3), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
+
+    table.cell(statsTable, 0, 2, "A", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(statsTable, 1, 2, gradeWinRateStr(2), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
+
+    table.cell(statsTable, 0, 3, "B", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(statsTable, 1, 3, gradeWinRateStr(1), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
+
+    table.cell(statsTable, 0, 4, "C", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(statsTable, 1, 4, gradeWinRateStr(0), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
