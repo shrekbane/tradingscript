@@ -189,6 +189,7 @@ Each trade's outcome is tallied against the grade it entered at, not whatever th
 - Show info table, signal markers, EMA lines
 - Show previous setups + how many to keep
 - Show Grade Win-Rate Stats panel
+- Table Text Size (Tiny / Small / Normal / Large) — applies to both tables
 
 ---
 
@@ -200,6 +201,7 @@ Each trade's outcome is tallied against the grade it entered at, not whatever th
 - **Watch the Volatility row.** A signal firing during "High" volatility has meaningfully wider stops — factor that into position sizing.
 - **Test before you trust it.** Run it on your instrument and timeframe with alerts on for a while before using it to size real trades.
 - **Give the Grade Win-Rate Stats panel a real sample size before trusting it.** A handful of closed setups per grade can look great or terrible by chance — wait until each grade has a reasonable number of trades before drawing conclusions.
+- **On a phone or small screen, drop Table Text Size to Tiny or Small.** The default size is tuned for a desktop chart and can crowd a small display — this setting shrinks both tables at once.
 
 ---
 

@@ -108,6 +108,11 @@ showTrendLines = input.bool(false, "Show Trend (EMA) Lines", group=grpTable)
 showHistory = input.bool(false, "Show Previous Setups (keep history)", group=grpTable)
 maxSetups   = input.int(5, "Max Setups to Keep (if history on)", minval=1, maxval=40, group=grpTable, active=showHistory)
 showGradeStats = input.bool(true, "Show Grade Win-Rate Stats", group=grpTable)
+// Applies to both tables (info table and grade stats), so it only greys out
+// when both are off — checking showTable alone would incorrectly grey this
+// out whenever just the info table was hidden but stats were still shown.
+tableSizeInput = input.string("Small", "Table Text Size", options=["Tiny","Small","Normal","Large"], group=grpTable, active=showTable or showGradeStats)
+tableSize = tableSizeInput == "Tiny" ? size.tiny : tableSizeInput == "Normal" ? size.normal : tableSizeInput == "Large" ? size.large : size.small
 
 // ---------------- COLOR PALETTE (light/dark theme safe) ----------------
 // One shared palette used everywhere on the chart, chosen so every color
@@ -457,27 +462,27 @@ valueCol = color.new(chart.fg_color, 0)
 if showTable
     var table infoTable = table.new(position.top_right, 2, 6, border_width=1, border_color=color.new(chart.fg_color, 80))
 
-    table.cell(infoTable, 0, 0, inTrade ? "In trade" : "No active trade", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 0, inTrade ? (tradeDir == 1 ? "Long" : "Short") : "—", bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(infoTable, 0, 0, inTrade ? "In trade" : "No active trade", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 0, inTrade ? (tradeDir == 1 ? "Long" : "Short") : "—", bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
     // Shows the higher-timeframe bias specifically (not the combined
     // confluence direction) — a standalone "bigger picture" read. Score
     // below already reflects the full 5-factor blend, so this row is
     // deliberately independent of it rather than redundant with it.
-    table.cell(infoTable, 0, 1, "Trend (HTF)", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 1, htfBull ? "Bullish" : "Bearish", bgcolor=panelBg, text_color=htfBull ? palBull : palBear, text_halign=text.align_right)
+    table.cell(infoTable, 0, 1, "Trend (HTF)", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 1, htfBull ? "Bullish" : "Bearish", bgcolor=panelBg, text_color=htfBull ? palBull : palBear, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(infoTable, 0, 2, "Score", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 2, str.tostring(score, "#.0") + "/10 · " + grade, bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(infoTable, 0, 2, "Score", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 2, str.tostring(score, "#.0") + "/10 · " + grade, bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(infoTable, 0, 3, "Momentum", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 3, str.tostring(rsiVal, "#.0"), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(infoTable, 0, 3, "Momentum", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 3, str.tostring(rsiVal, "#.0"), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(infoTable, 0, 4, "Trend strength", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 4, str.tostring(adxVal, "#.0") + " · " + (adxStrong ? "Strong" : "Weak"), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(infoTable, 0, 4, "Trend strength", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 4, str.tostring(adxVal, "#.0") + " · " + (adxStrong ? "Strong" : "Weak"), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(infoTable, 0, 5, "Volatility", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(infoTable, 1, 5, volState + (useVolScaling ? " · x" + str.tostring(volFactor, "#.00") : ""), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(infoTable, 0, 5, "Volatility", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(infoTable, 1, 5, volState + (useVolScaling ? " · x" + str.tostring(volFactor, "#.00") : ""), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
 // ---------------- GRADE WIN-RATE STATS (pure measurement) ----------------
 // Per-grade breakdown of how often a setup reached TP1 before hitting SL vs.
@@ -487,17 +492,17 @@ if showTable
 if showGradeStats
     var table statsTable = table.new(position.bottom_right, 2, 5, border_width=1, border_color=color.new(chart.fg_color, 80))
 
-    table.cell(statsTable, 0, 0, "Grade", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(statsTable, 1, 0, "TP1 before SL", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_right)
+    table.cell(statsTable, 0, 0, "Grade", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(statsTable, 1, 0, "TP1 before SL", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(statsTable, 0, 1, "A+", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(statsTable, 1, 1, gradeWinRateStr(3), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(statsTable, 0, 1, "A+", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(statsTable, 1, 1, gradeWinRateStr(3), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(statsTable, 0, 2, "A", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(statsTable, 1, 2, gradeWinRateStr(2), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(statsTable, 0, 2, "A", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(statsTable, 1, 2, gradeWinRateStr(2), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(statsTable, 0, 3, "B", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(statsTable, 1, 3, gradeWinRateStr(1), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(statsTable, 0, 3, "B", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(statsTable, 1, 3, gradeWinRateStr(1), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
 
-    table.cell(statsTable, 0, 4, "C", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
-    table.cell(statsTable, 1, 4, gradeWinRateStr(0), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+    table.cell(statsTable, 0, 4, "C", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
+    table.cell(statsTable, 1, 4, gradeWinRateStr(0), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
