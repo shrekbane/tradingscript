@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 indicator("GradeRunner (Trend+Momentum+Vol+HTF)", shorttitle="GradeRunner", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=50)
 
 // =========================================================================
@@ -35,6 +35,427 @@ tp3Mult = input.float(3.0, "TP3 (x ATR)", step=0.1, group=grpSignal)
 extendBars = input.int(20, "Extend Lines (bars)", group=grpSignal)
 
 // Core Signal: an extra, stricter gate on top of the confluence score. The
+// score can flip direction purely because a lagging indicator crossed, with
+// no real price action behind it. When enabled, a signal additionally needs
+// a genuine breakout confirmation — price closing beyond the recent N-bar
+// high/low in the signal's direction — before it's allowed to fire. This
+// turns the score into a quality/grade filter and Core Signal into the
+// actual trigger/timing mechanism.
+coreSignalOn  = input.bool(false, "Core Signal (require breakout confirmation)", group=grpSignal)
+// v6's active= greys out this input in the settings panel whenever Core
+// Signal is off, since it does nothing until that toggle is on.
+coreLookback  = input.int(5, "Core Signal Lookback (bars)", minval=1, group=grpSignal, active=coreSignalOn)
+
+// Volatility scaling: SL/TP distances (in ATR multiples) get multiplied by
+// one of these depending on the current Low/Normal/High volatility read, so
+// stops/targets widen automatically when the market's noisier and tighten
+// when it's calmer, instead of using one fixed distance regardless of
+// conditions.
+useVolScaling = input.bool(true, "Scale SL/TP by Volatility", group=grpSignal)
+lowVolFactor  = input.float(0.75, "Low Volatility Multiplier",  step=0.05, group=grpSignal, active=useVolScaling)
+highVolFactor = input.float(1.5,  "High Volatility Multiplier", step=0.05, group=grpSignal, active=useVolScaling)
+
+// One-trade-at-a-time gate: while ON (default), a new signal can only
+// override the currently tracked setup once that setup has hit TP1 (locked
+// in first profit) or SL (stopped out). Before that point, new signals are
+// simply ignored and the ongoing trade is left to run toward TP2/TP3. While
+// OFF, any qualifying signal always overrides immediately, regardless of
+// how far the current trade has progressed (the original behavior).
+lockUntilTP1OrSL = input.bool(true, "Lock New Signals Until TP1 or SL Hit", group=grpSignal)
+
+// Alert Hours: restricts when alert()/alertcondition() are allowed to fire —
+// e.g. skip the Asian session, or only alert during your own trading hours.
+// This only gates alerts. The score, badge, table, and drawn levels keep
+// updating normally around the clock; nothing here suppresses the chart.
+grpHours = "Alert Hours"
+restrictAlertHours = input.bool(false, "Only Alert During Selected Hours", group=grpHours)
+// input.session() opens TradingView's own session picker, which includes a
+// day-of-week selector — no separate "which days" input needed.
+alertSession = input.session("0900-1700", "Trading Hours (session)", group=grpHours, active=restrictAlertHours)
+
+// Dropdown instead of free text — most people don't know their IANA
+// timezone string off the top of their head. "Exchange (default)" maps to
+// blank, which tells time() to use the chart symbol's own exchange timezone.
+// Note: input.string()'s options list must be written inline like this —
+// Pine doesn't allow assigning the [...] literal to a variable first.
+alertTimezoneSel = input.string("Exchange (default)", "Timezone", options=["Exchange (default)", "UTC", "New York (UTC-5/-4)", "Chicago (UTC-6/-5)", "Los Angeles (UTC-8/-7)", "Sao Paulo (UTC-3)", "London (UTC+0/+1)", "Paris / Frankfurt (UTC+1/+2)", "Moscow (UTC+3)", "Dubai (UTC+4)", "Mumbai (UTC+5:30)", "Singapore (UTC+8)", "Hong Kong (UTC+8)", "Shanghai (UTC+8)", "Tokyo (UTC+9)", "Sydney (UTC+10/+11)", "Auckland (UTC+12/+13)"], group=grpHours, active=restrictAlertHours)
+
+tzToIANA(sel) =>
+    sel == "UTC" ? "UTC" :
+     sel == "New York (UTC-5/-4)" ? "America/New_York" :
+     sel == "Chicago (UTC-6/-5)" ? "America/Chicago" :
+     sel == "Los Angeles (UTC-8/-7)" ? "America/Los_Angeles" :
+     sel == "Sao Paulo (UTC-3)" ? "America/Sao_Paulo" :
+     sel == "London (UTC+0/+1)" ? "Europe/London" :
+     sel == "Paris / Frankfurt (UTC+1/+2)" ? "Europe/Paris" :
+     sel == "Moscow (UTC+3)" ? "Europe/Moscow" :
+     sel == "Dubai (UTC+4)" ? "Asia/Dubai" :
+     sel == "Mumbai (UTC+5:30)" ? "Asia/Kolkata" :
+     sel == "Singapore (UTC+8)" ? "Asia/Singapore" :
+     sel == "Hong Kong (UTC+8)" ? "Asia/Hong_Kong" :
+     sel == "Shanghai (UTC+8)" ? "Asia/Shanghai" :
+     sel == "Tokyo (UTC+9)" ? "Asia/Tokyo" :
+     sel == "Sydney (UTC+10/+11)" ? "Australia/Sydney" :
+     sel == "Auckland (UTC+12/+13)" ? "Pacific/Auckland" :
+     "" // "Exchange (default)" falls through to blank
+
+alertTimezone = tzToIANA(alertTimezoneSel)
+
+grpTable = "Display"
+showTable = input.bool(true, "Show Info Table", group=grpTable)
+showLabels = input.bool(true, "Show Signal Markers", group=grpTable)
+showTrendLines = input.bool(false, "Show Trend (EMA) Lines", group=grpTable)
+showHistory = input.bool(false, "Show Previous Setups (keep history)", group=grpTable)
+maxSetups   = input.int(5, "Max Setups to Keep (if history on)", minval=1, maxval=40, group=grpTable, active=showHistory)
+
+// ---------------- COLOR PALETTE (light/dark theme safe) ----------------
+// One shared palette used everywhere on the chart, chosen so every color
+// keeps decent contrast whether the chart theme is light or dark:
+// - palBull/palBear: mid-brightness teal/red (similar family to TradingView's
+//   own up/down candle colors) rather than pure color.green/color.red or a
+//   very dark maroon, which can wash out or vanish depending on theme.
+// - palNeutral: derived from chart.fg_color, so it's automatically near-black
+//   on a light chart and near-white on a dark chart — used for the TP levels,
+//   which should read as "neutral text," not bullish or bearish.
+// - palEntry: a bright, saturated blue that holds contrast on both themes.
+// - palEmaFast/palEmaSlow: mid-tone amber/violet for the optional EMA lines.
+palBull    = color.new(#26A69A, 0)
+palBear    = color.new(#EF5350, 0)
+palEntry   = color.new(#2962FF, 0)
+palNeutral = color.new(chart.fg_color, 0)
+palEmaFast = color.new(#FFB300, 0)
+palEmaSlow = color.new(#8E24AA, 0)
+
+// ---------------- TREND ----------------
+emaFast = ta.ema(close, fastLen)
+emaSlow = ta.ema(close, slowLen)
+trendBull = emaFast > emaSlow
+
+// Higher timeframe bias (confirmed HTF bars only -> no intrabar repaint)
+htfEmaFast = request.security(syminfo.tickerid, htfTF, ta.ema(close, fastLen), lookahead=barmerge.lookahead_off)
+htfEmaSlow = request.security(syminfo.tickerid, htfTF, ta.ema(close, slowLen), lookahead=barmerge.lookahead_off)
+htfBull = htfEmaFast > htfEmaSlow
+
+// ---------------- MOMENTUM ----------------
+rsiVal = ta.rsi(close, rsiLen)
+[macdLine, macdSignal, macdHist] = ta.macd(close, macdFast, macdSlow, macdSig)
+
+// ---------------- TREND STRENGTH (DMI/ADX) ----------------
+[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
+adxStrong = adxVal > 20
+diBull = diPlus > diMinus
+
+// ---------------- VOLATILITY ----------------
+atrVal    = ta.atr(atrLen)
+atrAvg    = ta.sma(atrVal, atrSmaLen)
+volRatio  = atrVal / atrAvg
+volState  = volRatio >= 1.2 ? "High" : volRatio <= 0.8 ? "Low" : "Normal"
+
+// Multiplier applied on top of the SL/TP ATR multiples below, based on volState.
+volFactor = not useVolScaling ? 1.0 : volState == "High" ? highVolFactor : volState == "Low" ? lowVolFactor : 1.0
+
+// ---------------- CONFLUENCE SCORE (0-10, split bull/bear) ----------------
+bullPts = 0.0
+bearPts = 0.0
+
+// 1) Local trend (2 pts)
+bullPts += trendBull ? 2.0 : 0.0
+bearPts += trendBull ? 0.0 : 2.0
+
+// 2) HTF bias (2 pts)
+bullPts += htfBull ? 2.0 : 0.0
+bearPts += htfBull ? 0.0 : 2.0
+
+// 3) RSI momentum (up to 2 pts, scaled by distance from 50)
+rsiBullPts = rsiVal > 50 ? math.min((rsiVal - 50) / 25 * 2, 2.0) : 0.0
+rsiBearPts = rsiVal < 50 ? math.min((50 - rsiVal) / 25 * 2, 2.0) : 0.0
+bullPts += rsiBullPts
+bearPts += rsiBearPts
+
+// 4) MACD histogram direction (2 pts)
+bullPts += macdHist > 0 ? 2.0 : 0.0
+bearPts += macdHist > 0 ? 0.0 : 2.0
+
+// 5) ADX/DMI strength confirmation (2 pts, only if trend is strong)
+if adxStrong
+    bullPts += diBull ? 2.0 : 0.0
+    bearPts += diBull ? 0.0 : 2.0
+
+score     = math.max(bullPts, bearPts)
+direction = bullPts > bearPts ? 1 : bullPts < bearPts ? -1 : 0
+
+gradeOf(s) =>
+    s >= 9.0 ? "A+" : s >= 7.0 ? "A" : s >= 5.0 ? "B" : "C"
+
+grade = gradeOf(score)
+
+gradeRank(g) => g == "A+" ? 4 : g == "A" ? 3 : g == "B" ? 2 : 1
+passesFilter = gradeRank(grade) >= gradeRank(minGradeInput)
+
+starsOf(g) =>
+    g == "A+" ? "★★★" : g == "A" ? "★★" : g == "B" ? "★" : ""
+stars = starsOf(grade)
+
+// ---------------- CORE SIGNAL (breakout confirmation gate) ----------------
+coreBullTrigger = close > ta.highest(high[1], coreLookback)
+coreBearTrigger = close < ta.lowest(low[1], coreLookback)
+corePasses = not coreSignalOn or (direction == 1 ? coreBullTrigger : direction == -1 ? coreBearTrigger : false)
+
+// ---------------- ALERT HOURS ----------------
+// Gates ONLY the alert()/alertcondition() calls further down — the score,
+// badge, table, and drawn entry/SL/TP levels keep updating around the clock
+// regardless of this setting.
+inSession = alertTimezone == "" ? not na(time(timeframe.period, alertSession)) : not na(time(timeframe.period, alertSession, alertTimezone))
+alertsAllowed = not restrictAlertHours or inSession
+
+// ---------------- TRADE STATE FLAGS (declared early for signal gating) ----------------
+// These need to exist before newSignal is computed below, since the
+// one-trade-at-a-time gate reads inTrade/tp1Hit/slHit. The rest of the trade
+// state (entry/SL/TP prices, tradeDir) is declared further down where it's
+// first assigned — only the flags needed for gating live here.
+var bool inTrade = false
+var bool tp1Hit  = false
+var bool tp2Hit  = false
+var bool tp3Hit  = false
+var bool slHit   = false
+
+// While the lock is on, a new signal is only allowed to override the current
+// setup once it's already hit TP1 or SL. Note this reads last bar's
+// tp1Hit/slHit (they haven't been updated for *this* bar yet — that happens
+// in the TP/SL hit detection block further down) so there's a natural
+// one-bar lag: override eligibility starts the bar *after* TP1/SL is
+// touched, not the same bar. That keeps everything non-repainting.
+canOverride = not lockUntilTP1OrSL or not inTrade or tp1Hit or slHit
+
+// ---------------- SIGNAL TRIGGER (fires only on confirmed bar close) ----------------
+// lastDir only advances when a signal actually fires (not just when the raw
+// score direction flips). That way, if Core Signal is on and the breakout
+// hasn't confirmed yet, the script keeps checking on every subsequent bar —
+// it doesn't get "stuck" thinking this direction was already handled.
+var int lastDir = 0
+newSignal = barstate.isconfirmed and direction != 0 and direction != lastDir and passesFilter and corePasses and canOverride
+
+if newSignal
+    lastDir := direction
+
+// newSignal (and therefore buySignal/sellSignal) still fires around the
+// clock regardless of Alert Hours — the badge/lines/table keep working.
+// alertsAllowed only gates whether that signal is also allowed to alert.
+buySignal  = newSignal and direction == 1 and alertsAllowed
+sellSignal = newSignal and direction == -1 and alertsAllowed
+
+// alertcondition() must run unconditionally every bar (can't live inside an
+// if block) so these show up as pickable conditions in TradingView's
+// "Create Alert" dialog, alongside the dynamic alert() message below.
+alertcondition(buySignal,               title="Buy Signal",         message="{{ticker}}: BUY signal at {{close}}")
+alertcondition(sellSignal,              title="Sell Signal",        message="{{ticker}}: SELL signal at {{close}}")
+alertcondition(buySignal or sellSignal, title="Buy or Sell Signal",  message="{{ticker}}: new signal at {{close}}")
+
+// ---------------- TRADE STATE TRACKING ----------------
+// (inTrade is declared earlier, alongside the other gating flags.)
+var float entryPrice = na
+var float slPrice = na
+var float tp1Price = na
+var float tp2Price = na
+var float tp3Price = na
+var int   tradeDir = 0
+
+// Arrays (not single handles) so multiple past setups can be kept on chart
+// at once when "Show Previous Setups" is enabled.
+var line[]  entryLines = array.new_line()
+var line[]  slLines    = array.new_line()
+var line[]  tp1Lines   = array.new_line()
+var line[]  tp2Lines   = array.new_line()
+var line[]  tp3Lines   = array.new_line()
+var label[] entryLbls  = array.new_label()
+var label[] slLbls     = array.new_label()
+var label[] tp1Lbls    = array.new_label()
+var label[] tp2Lbls    = array.new_label()
+var label[] tp3Lbls    = array.new_label()
+var label[] badgeLbls  = array.new_label()
+var label[] hitLbls    = array.new_label()
+
+// Drop the oldest setup's drawings to make room, or clear everything if
+// history is off (so only the newest setup is ever shown). Entry/SL/TP
+// lines, labels, and the small "TP1/TP2/TP3/SL hit" tags are always cleared
+// down to just the current setup — only the direction/grade badge persists
+// across past setups — so history stays clean instead of piling up old
+// price-level and hit-tag clutter.
+trimSetups() =>
+    keepBadge = showHistory ? maxSetups - 1 : 0
+    keepRest  = 0
+    while array.size(entryLines) > keepRest
+        line.delete(array.shift(entryLines))
+    while array.size(slLines) > keepRest
+        line.delete(array.shift(slLines))
+    while array.size(tp1Lines) > keepRest
+        line.delete(array.shift(tp1Lines))
+    while array.size(tp2Lines) > keepRest
+        line.delete(array.shift(tp2Lines))
+    while array.size(tp3Lines) > keepRest
+        line.delete(array.shift(tp3Lines))
+    while array.size(entryLbls) > keepRest
+        label.delete(array.shift(entryLbls))
+    while array.size(slLbls) > keepRest
+        label.delete(array.shift(slLbls))
+    while array.size(tp1Lbls) > keepRest
+        label.delete(array.shift(tp1Lbls))
+    while array.size(tp2Lbls) > keepRest
+        label.delete(array.shift(tp2Lbls))
+    while array.size(tp3Lbls) > keepRest
+        label.delete(array.shift(tp3Lbls))
+    while array.size(hitLbls) > keepRest
+        label.delete(array.shift(hitLbls))
+    while array.size(badgeLbls) > keepBadge
+        label.delete(array.shift(badgeLbls))
+
+if newSignal
+    entryPrice := close
+    tradeDir   := direction
+    // volFactor stretches/compresses these ATR distances based on the
+    // Low/Normal/High volatility read captured at the moment of entry.
+    slPrice    := direction == 1 ? close - atrVal * slMult  * volFactor : close + atrVal * slMult  * volFactor
+    tp1Price   := direction == 1 ? close + atrVal * tp1Mult * volFactor : close - atrVal * tp1Mult * volFactor
+    tp2Price   := direction == 1 ? close + atrVal * tp2Mult * volFactor : close - atrVal * tp2Mult * volFactor
+    tp3Price   := direction == 1 ? close + atrVal * tp3Mult * volFactor : close - atrVal * tp3Mult * volFactor
+    inTrade    := true
+
+    trimSetups()
+
+    if showLabels
+        // Uses the shared palette so entry/TP/SL stay legible on both light
+        // and dark chart themes: neutral (theme-adaptive) TP levels, bear-red
+        // SL, accent-blue entry.
+        entryCol = palEntry
+        tpCol    = palNeutral
+        slCol    = palBear
+
+        array.push(entryLines, line.new(bar_index, entryPrice, bar_index + extendBars, entryPrice, color=entryCol, style=line.style_solid,  width=1))
+        array.push(slLines,    line.new(bar_index, slPrice,    bar_index + extendBars, slPrice,    color=slCol,    style=line.style_solid,  width=1))
+        array.push(tp1Lines,   line.new(bar_index, tp1Price,   bar_index + extendBars, tp1Price,   color=tpCol,    style=line.style_dashed, width=1))
+        array.push(tp2Lines,   line.new(bar_index, tp2Price,   bar_index + extendBars, tp2Price,   color=tpCol,    style=line.style_dashed, width=1))
+        array.push(tp3Lines,   line.new(bar_index, tp3Price,   bar_index + extendBars, tp3Price,   color=tpCol,    style=line.style_dashed, width=1))
+
+        array.push(entryLbls, label.new(bar_index + extendBars, entryPrice, "ENTRY " + str.tostring(entryPrice, format.mintick), style=label.style_none, textcolor=entryCol, size=size.small, textalign=text.align_left))
+        array.push(slLbls,    label.new(bar_index + extendBars, slPrice,  str.tostring(slPrice, format.mintick),  style=label.style_none, textcolor=slCol, size=size.small, textalign=text.align_left))
+        array.push(tp1Lbls,   label.new(bar_index + extendBars, tp1Price, "TP1 " + str.tostring(tp1Price, format.mintick), style=label.style_none, textcolor=tpCol, size=size.small, textalign=text.align_left))
+        array.push(tp2Lbls,   label.new(bar_index + extendBars, tp2Price, "TP2 " + str.tostring(tp2Price, format.mintick), style=label.style_none, textcolor=tpCol, size=size.small, textalign=text.align_left))
+        array.push(tp3Lbls,   label.new(bar_index + extendBars, tp3Price, "TP3 " + str.tostring(tp3Price, format.mintick), style=label.style_none, textcolor=tpCol, size=size.small, textalign=text.align_left))
+
+        // Green/red badge, e.g. "▲ BUY B ★" / "▼ SELL B ★" — spells out the
+        // direction so the grade letter (A+/A/B/C) never gets mistaken for
+        // a Buy/Sell abbreviation.
+        badgeArrow = direction == 1 ? "▲" : "▼"
+        badgeDir   = direction == 1 ? "BUY" : "SELL"
+        badgeText  = badgeArrow + " " + badgeDir + " " + grade + " " + stars
+        badgeCol   = direction == 1 ? palBull : palBear
+        array.push(badgeLbls, label.new(bar_index, direction == 1 ? low : high, badgeText, style=direction == 1 ? label.style_label_up : label.style_label_down, color=badgeCol, textcolor=color.white, size=size.small))
+
+    if alertsAllowed
+        alertMsg = direction == 1 ? "BUY signal (" + grade + " " + stars + ") on " + syminfo.ticker + " @ " + str.tostring(entryPrice, format.mintick) : "SELL signal (" + grade + " " + stars + ") on " + syminfo.ticker + " @ " + str.tostring(entryPrice, format.mintick)
+        alert(alertMsg, alert.freq_once_per_bar_close)
+
+// ---------------- TP / SL HIT DETECTION & ALERTS ----------------
+// (tp1Hit/tp2Hit/tp3Hit/slHit are declared earlier, alongside inTrade.)
+if newSignal
+    tp1Hit := false
+    tp2Hit := false
+    tp3Hit := false
+    slHit  := false
+
+// Each fires exactly once per level, on the bar that first touches it.
+hitTP1 = inTrade and not newSignal and not tp1Hit and (tradeDir == 1 ? high >= tp1Price : low <= tp1Price)
+hitTP2 = inTrade and not newSignal and not tp2Hit and (tradeDir == 1 ? high >= tp2Price : low <= tp2Price)
+hitTP3 = inTrade and not newSignal and not tp3Hit and (tradeDir == 1 ? high >= tp3Price : low <= tp3Price)
+hitSL  = inTrade and not newSignal and not slHit  and (tradeDir == 1 ? low  <= slPrice  : high >= slPrice)
+
+if hitTP1
+    tp1Hit := true
+    if showLabels
+        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP1 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
+    if alertsAllowed
+        alert(syminfo.ticker + ": TP1 hit @ " + str.tostring(tp1Price, format.mintick), alert.freq_once_per_bar_close)
+
+if hitTP2
+    tp2Hit := true
+    if showLabels
+        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP2 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
+    if alertsAllowed
+        alert(syminfo.ticker + ": TP2 hit @ " + str.tostring(tp2Price, format.mintick), alert.freq_once_per_bar_close)
+
+if hitTP3
+    tp3Hit := true
+    if showLabels
+        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP3 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
+    if alertsAllowed
+        alert(syminfo.ticker + ": TP3 hit @ " + str.tostring(tp3Price, format.mintick), alert.freq_once_per_bar_close)
+
+if hitSL
+    slHit := true
+    if showLabels
+        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? low : high, "SL hit", style=label.style_none, textcolor=palBear, size=size.tiny, yloc=tradeDir == 1 ? yloc.belowbar : yloc.abovebar))
+    if alertsAllowed
+        alert(syminfo.ticker + ": Stop Loss hit @ " + str.tostring(slPrice, format.mintick), alert.freq_once_per_bar_close)
+
+// Trade is considered closed once SL is hit, or once TP3 (final target) is hit
+// (this happens regardless of Alert Hours — only the alert itself is gated).
+if tp3Hit or slHit
+    inTrade := false
+
+alertcondition(hitTP1 and alertsAllowed, title="TP1 Hit", message="{{ticker}}: TP1 hit at {{close}}")
+alertcondition(hitTP2 and alertsAllowed, title="TP2 Hit", message="{{ticker}}: TP2 hit at {{close}}")
+alertcondition(hitTP3 and alertsAllowed, title="TP3 Hit", message="{{ticker}}: TP3 hit at {{close}}")
+alertcondition(hitSL  and alertsAllowed, title="Stop Loss Hit", message="{{ticker}}: Stop loss hit at {{close}}")
+
+// ---------------- PLOTTING ----------------
+// emaFast/emaSlow are still fully computed above and drive the trend score
+// either way — this toggle only controls whether the lines are drawn.
+plot(showTrendLines ? emaFast : na, "Fast EMA", color=palEmaFast)
+plot(showTrendLines ? emaSlow : na, "Slow EMA", color=palEmaSlow)
+
+// (Signal markers are drawn as the green/red "▲ Grade ★★" badge above, matching
+// the reference screenshot's marker style rather than a plain plotshape.)
+
+// ---------------- INFO TABLE (minimalist) ----------------
+// One flat panel tone, no zebra striping, no loud accent colors — just a
+// thin adaptive border and a label/value contrast. chart.fg_color/bg_color
+// auto-adjust to the user's light/dark chart theme, so this stays legible
+// either way instead of being tuned for one theme.
+//
+// Trimmed down to rows that actually change with the market. Dropped: the
+// branding/title row (static text, no market info), Core Signal (a static
+// echo of a setting you already configured, not live data), and Alerts
+// (only meaningful if Alert Hours is on, and dead weight otherwise). None
+// of this touches the underlying logic — Core Signal still gates the
+// breakout confirmation and Alert Hours still gates alerts exactly as
+// before; they're just no longer displayed in the table.
+if showTable
+    var table infoTable = table.new(position.top_right, 2, 6, border_width=1, border_color=color.new(chart.fg_color, 80))
+    panelBg  = color.new(chart.fg_color, 95)
+    labelCol = color.new(chart.fg_color, 40)
+    valueCol = color.new(chart.fg_color, 0)
+
+    table.cell(infoTable, 0, 0, inTrade ? "In trade" : "No active trade", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
+    table.cell(infoTable, 1, 0, inTrade ? (tradeDir == 1 ? "Long" : "Short") : "—", bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+
+    // Shows the higher-timeframe bias specifically (not the combined
+    // confluence direction) — a standalone "bigger picture" read. Score
+    // below already reflects the full 5-factor blend, so this row is
+    // deliberately independent of it rather than redundant with it.
+    table.cell(infoTable, 0, 1, "Trend (HTF)", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
+    table.cell(infoTable, 1, 1, htfBull ? "Bullish" : "Bearish", bgcolor=panelBg, text_color=htfBull ? palBull : palBear, text_halign=text.align_right)
+
+    table.cell(infoTable, 0, 2, "Score", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
+    table.cell(infoTable, 1, 2, str.tostring(score, "#.0") + "/10 · " + grade, bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+
+    table.cell(infoTable, 0, 3, "Momentum", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
+    table.cell(infoTable, 1, 3, str.tostring(rsiVal, "#.0"), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+
+    table.cell(infoTable, 0, 4, "Trend strength", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
+    table.cell(infoTable, 1, 4, str.tostring(adxVal, "#.0") + " · " + (adxStrong ? "Strong" : "Weak"), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)
+
+    table.cell(infoTable, 0, 5, "Volatility", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left)
+    table.cell(infoTable, 1, 5, volState + (useVolScaling ? " · x" + str.tostring(volFactor, "#.00") : ""), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right)// Core Signal: an extra, stricter gate on top of the confluence score. The
 // score can flip direction purely because a lagging indicator crossed, with
 // no real price action behind it. When enabled, a signal additionally needs
 // a genuine breakout confirmation — price closing beyond the recent N-bar
