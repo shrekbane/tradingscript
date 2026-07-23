@@ -4,6 +4,7 @@ All notable changes to GradeRunner are logged here, newest first. Entries are wr
 
 ## 2026-07-23
 
+- `docs(readme)`: add a warning under Alerts about clearing the Message box when using "Any alert() function call" — TradingView auto-fills it with a generic indicator-description string that overrides the script's real `alert()` message if left as-is, which was silently showing up in desktop notifications instead of the intended text.
 - `chore(pine)`: upgrade `//@version=5` → `//@version=6`. Added `active=` to dependent inputs so they grey out in the settings panel when irrelevant: Core Signal Lookback (active only when Core Signal is on), Low/High Volatility Multiplier (active only when volatility scaling is on), Trading Hours session + Timezone (active only when Alert Hours restriction is on), and Max Setups to Keep (active only when Show Previous Setups is on). No other v6 features (enums, dynamic requests, bid/ask, runtime logging) were applicable to this script; no behavioral changes beyond the settings panel UI.
 - `feat(signal)`: add one-trade-at-a-time gating via new "Lock New Signals Until TP1 or SL Hit" toggle (on by default). Previously, `newSignal` never checked trade state, so a new qualifying signal could override an active setup at any point, even before it had moved at all. Now, while locked, new signals are ignored until the current setup has hit TP1 or SL, then override is allowed again. Required moving `inTrade`/`tp1Hit`/`tp2Hit`/`tp3Hit`/`slHit` declarations earlier in the script (before `newSignal` is computed) so the gate can read them; their assignment logic is unchanged. One-bar lag by design (uses last bar's hit status) to stay non-repainting. Toggle off restores the original always-override behavior.
 - `feat(pages)`: add a custom `index.html` landing page for GitHub Pages — single self-contained file, no build step, styled to match the indicator's own color palette (teal/red/blue). Covers the scoring model, feature highlights, alert previews, settings reference, and install steps.
@@ -22,6 +23,13 @@ All notable changes to GradeRunner are logged here, newest first. Entries are wr
 - `feat(alerts)`: add named Buy Signal / Sell Signal / Buy or Sell Signal `alertcondition()`s alongside the existing dynamic `alert()` call.
 - `fix(badge)`: badge now spells out BUY/SELL explicitly (e.g. `▲ BUY B ★`) instead of just an arrow + grade letter — the grade letter alone (e.g. "B") was being misread as a buy/sell indicator.
 - `feat(display)`: add toggle to hide the fast/slow EMA plot lines from the chart while keeping them fully computed and feeding the trend score.
+- `style`: initial visual pass to mirror reference screenshot — dashed TP1–3 lines, solid entry/SL lines, signal badge, and info table layout.
+- `feat`: initial build (working title "Confluence Scalper", later renamed GradeRunner). 5-factor confluence score (local trend, HTF bias, RSI, MACD, ADX/DMI) graded A+/A/B/C, auto-plotted entry/SL/TP1–3 (ATR-based), non-repainting signal trigger on confirmed bar close.
+- `docs`: add `README.md` (GitHub-oriented, with install steps) and standalone TradingView description draft.
+
+---
+
+*Format: newest entries at the top. Feel free to edit/reword before using as actual commit messages — these are written from the session history, not from real diffs.*- `feat(display)`: add toggle to hide the fast/slow EMA plot lines from the chart while keeping them fully computed and feeding the trend score.
 - `style`: initial visual pass to mirror reference screenshot — dashed TP1–3 lines, solid entry/SL lines, signal badge, and info table layout.
 - `feat`: initial build (working title "Confluence Scalper", later renamed GradeRunner). 5-factor confluence score (local trend, HTF bias, RSI, MACD, ADX/DMI) graded A+/A/B/C, auto-plotted entry/SL/TP1–3 (ATR-based), non-repainting signal trigger on confirmed bar close.
 - `docs`: add `README.md` (GitHub-oriented, with install steps) and standalone TradingView description draft.
