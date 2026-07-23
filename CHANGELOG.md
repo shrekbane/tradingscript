@@ -4,6 +4,8 @@ All notable changes to GradeRunner are logged here, newest first. Entries are wr
 
 ## 2026-07-23
 
+- `refactor(history)`: replace the 10 parallel arrays used for entry/SL/TP1-3 lines and labels with a single Pine v6 user-defined type (`type Setup`) holding all 10 as fields, plus a `var cur = Setup.new()`. These never actually held more than one live item at a time (the old code pushed onto an array then immediately trimmed it back to 0 every signal), so a plain mutable object that gets its old drawings deleted and replaced is a more direct fit than an array. `badgeLbls` and `hitLbls` stay as arrays since they genuinely hold multiple items at once (badge history, and 2-3 concurrent hit tags mid-trade). No behavior or visual changes.
+- `refactor(pine)`: routine cleanup pass, no behavior changes — (1) combined the two HTF `request.security()` calls (fast/slow EMA) into one tuple-returning call instead of two separate ones; (2) swapped unused `macdLine`/`macdSignal` for `_` placeholders in the `ta.macd()` destructure since only `macdHist` is used; (3) gated the info table's drawing block with `barstate.islast` so cells aren't rewritten on every historical bar, only the current one; (4) removed the unused `max_boxes_count=50` from `indicator()` since the script never draws a box; (5) replaced `trimSetups()`'s six duplicated while-loops with two reusable helper functions (`trimLines`, `trimLabels`); (6) extracted the repeated "push hit label + fire alert" logic (previously duplicated 4x across TP1/TP2/TP3/SL) into one shared `fireHit()` function.
 - `feat(alerts)`: change the Buy/Sell signal `alert()` message from a single line to a multi-line format — header (direction/grade/ticker) followed by `Entry:`, `TP1:`, `TP2:`, `SL:` each on their own line. TP3 is intentionally omitted since by the time price reaches it, the user should already be watching the chart. Updated the alert preview examples in `README.md` and `TradingView_Description.txt` to match.
 - `docs`: add `TradingView_Description.txt` — the README's content reformatted with TradingView's own markup tags (`[b]`, `[list]`, `█` section headers) for pasting directly into the Publish/Edit Script description box, since TradingView doesn't render standard Markdown. Kept as a separate file so the README stays plain GitHub Markdown.
 - `docs(readme)`: add a warning under Alerts about clearing the Message box when using "Any alert() function call" — TradingView auto-fills it with a generic indicator-description string that overrides the script's real `alert()` message if left as-is, which was silently showing up in desktop notifications instead of the intended text.
@@ -28,27 +30,6 @@ All notable changes to GradeRunner are logged here, newest first. Entries are wr
 - `style`: initial visual pass to mirror reference screenshot — dashed TP1–3 lines, solid entry/SL lines, signal badge, and info table layout.
 - `feat`: initial build (working title "Confluence Scalper", later renamed GradeRunner). 5-factor confluence score (local trend, HTF bias, RSI, MACD, ADX/DMI) graded A+/A/B/C, auto-plotted entry/SL/TP1–3 (ATR-based), non-repainting signal trigger on confirmed bar close.
 - `docs`: add `README.md` (GitHub-oriented, with install steps) and standalone TradingView description draft.
-
----
-
-*Format: newest entries at the top. Feel free to edit/reword before using as actual commit messages — these are written from the session history, not from real diffs.*- `feat(alerts)`: add TP1/TP2/TP3 Hit and Stop Loss Hit detection, each firing once with its own `alertcondition()` and dynamic `alert()` message.
-- `feat(alerts)`: add named Buy Signal / Sell Signal / Buy or Sell Signal `alertcondition()`s alongside the existing dynamic `alert()` call.
-- `fix(badge)`: badge now spells out BUY/SELL explicitly (e.g. `▲ BUY B ★`) instead of just an arrow + grade letter — the grade letter alone (e.g. "B") was being misread as a buy/sell indicator.
-- `feat(display)`: add toggle to hide the fast/slow EMA plot lines from the chart while keeping them fully computed and feeding the trend score.
-- `style`: initial visual pass to mirror reference screenshot — dashed TP1–3 lines, solid entry/SL lines, signal badge, and info table layout.
-- `feat`: initial build (working title "Confluence Scalper", later renamed GradeRunner). 5-factor confluence score (local trend, HTF bias, RSI, MACD, ADX/DMI) graded A+/A/B/C, auto-plotted entry/SL/TP1–3 (ATR-based), non-repainting signal trigger on confirmed bar close.
-- `docs`: add `README.md` (GitHub-oriented, with install steps) and standalone TradingView description draft.
-
----
-
-*Format: newest entries at the top. Feel free to edit/reword before using as actual commit messages — these are written from the session history, not from real diffs.*- `feat(display)`: add toggle to hide the fast/slow EMA plot lines from the chart while keeping them fully computed and feeding the trend score.
-- `style`: initial visual pass to mirror reference screenshot — dashed TP1–3 lines, solid entry/SL lines, signal badge, and info table layout.
-- `feat`: initial build (working title "Confluence Scalper", later renamed GradeRunner). 5-factor confluence score (local trend, HTF bias, RSI, MACD, ADX/DMI) graded A+/A/B/C, auto-plotted entry/SL/TP1–3 (ATR-based), non-repainting signal trigger on confirmed bar close.
-- `docs`: add `README.md` (GitHub-oriented, with install steps) and standalone TradingView description draft.
-
----
-
-*Format: newest entries at the top. Feel free to edit/reword before using as actual commit messages — these are written from the session history, not from real diffs.*- `docs`: add `README.md` (GitHub-oriented, with install steps) and standalone TradingView description draft.
 
 ---
 
