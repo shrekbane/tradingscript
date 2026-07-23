@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GradeRunner — Trend + Momentum + Volatility + HTF Bias</title>
-<meta name="description" content="A Pine Script v5 indicator that grades every setup on a 0-10 confluence score, then auto-plots entry, stop loss, and three take-profit levels.">
+<meta name="description" content="A Pine Script v6 indicator that grades every setup on a 0-10 confluence score, then auto-plots entry, stop loss, and three take-profit levels.">
 <style>
   :root{
     --bg:#0b0f0e;
@@ -187,7 +187,7 @@
 
 <header class="hero">
   <div class="wrap">
-    <span class="eyebrow">Pine Script v5 · TradingView Indicator</span>
+    <span class="eyebrow">Pine Script v6 · TradingView Indicator</span>
     <h1>Grade every setup.<br>Trade the <span>graded</span> ones.</h1>
     <p class="lede">GradeRunner scores every bar across five factors — trend, higher-timeframe bias, momentum, MACD, and trend strength — into a single A+/A/B/C grade, then auto-plots entry, stop loss, and three take-profit levels the moment a qualifying signal fires.</p>
     <div class="hero-actions">
@@ -297,14 +297,14 @@
       <div class="nicon buy">▲</div>
       <div style="flex:1">
         <div class="notif-head"><div class="title">GradeRunner: Buy Signal</div><div class="time">09:23</div></div>
-        <div class="msg">BUY signal (A ★★) on XAUUSD @ 4020.975</div>
+        <div class="msg">BUY signal (A ★★) on XAUUSD<br>Entry: 4020.975<br>TP1: 4024.660<br>TP2: 4028.345<br>SL: 4017.290</div>
       </div>
     </div>
     <div class="notif">
       <div class="nicon sell">▼</div>
       <div style="flex:1">
         <div class="notif-head"><div class="title">GradeRunner: Sell Signal</div><div class="time">09:31</div></div>
-        <div class="msg">SELL signal (B ★) on XAUUSD @ 4016.690</div>
+        <div class="msg">SELL signal (B ★) on XAUUSD<br>Entry: 4016.690<br>TP1: 4012.405<br>TP2: 4008.120<br>SL: 4020.975</div>
       </div>
     </div>
     <div class="notif">
@@ -321,6 +321,7 @@
         <div class="msg">XAUUSD: Stop Loss hit @ 4016.690</div>
       </div>
     </div>
+    <p class="section-sub" style="margin-top:20px; margin-bottom:0;">TP3 is left out of the entry alert on purpose — by the time price gets that far, you should already be watching the chart to manage it.</p>
   </div>
 </section>
 
