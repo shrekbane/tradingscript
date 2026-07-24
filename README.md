@@ -54,6 +54,8 @@ You set a **minimum grade** in settings — signals graded below that are simply
 
 **Table note:** the info table's **Score** row reflects this combined direction (all 5 factors). The **Trend** row, however, shows the **higher-timeframe bias specifically** — a standalone "bigger picture" read, independent of the local chart's tactical indicators (RSI, MACD, ADX). This is intentional: Score tells you how strongly everything currently agrees, while Trend tells you what the bigger picture looks like on its own, even if the local score is fighting it.
 
+**Higher-timeframe agreement is a hard requirement, not just a scored factor.** On top of contributing points to the score above, a signal is only allowed to fire in the direction the higher timeframe already agrees with — at every grade, including A+. This is deliberate: a sharp local bounce candle can score high enough to hit A/A+ on its own while still fighting the bigger-picture trend, and this gate exists specifically to block that "buy/sell the bounce against the trend" trade type. A genuinely good counter-trend reversal getting blocked here is an accepted trade-off — the goal is discipline against chasing bounces, not maximizing signal count or raw win rate.
+
 ---
 
 ## 🎯 Core Signal (optional breakout gate)

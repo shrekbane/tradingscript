@@ -146,6 +146,17 @@ htfEmaFast = request.security(syminfo.tickerid, htfTF, ta.ema(close, fastLen), l
 htfEmaSlow = request.security(syminfo.tickerid, htfTF, ta.ema(close, slowLen), lookahead=barmerge.lookahead_off)
 htfBull = htfEmaFast > htfEmaSlow
 
+// Hard gate (not just a scored factor): a signal is only allowed to fire in
+// the direction the higher timeframe already agrees with — unconditionally,
+// at every grade, including A/A+. HTF Bias already contributes points to the
+// score above, but that alone doesn't stop a signal from firing against it;
+// a sharp local bounce candle can score high enough to hit A/A+ on its own
+// while still fighting the bigger-picture trend. This gate is specifically
+// about blocking that "buy/sell the bounce against the trend" trade type,
+// not about maximizing win rate — a genuinely good counter-trend reversal
+// signal getting blocked here is an accepted trade-off for the discipline.
+htfTrendOk(dir) => (dir == 1 and htfBull) or (dir == -1 and not htfBull)
+
 // ---------------- MOMENTUM ----------------
 rsiVal = ta.rsi(close, rsiLen)
 [macdLine, macdSignal, macdHist] = ta.macd(close, macdFast, macdSlow, macdSig)
@@ -243,7 +254,7 @@ canOverride = not lockUntilTP1OrSL or not inTrade or tp1Hit or slHit
 // hasn't confirmed yet, the script keeps checking on every subsequent bar —
 // it doesn't get "stuck" thinking this direction was already handled.
 var int lastDir = 0
-newSignal = barstate.isconfirmed and direction != 0 and direction != lastDir and passesFilter and corePasses and canOverride
+newSignal = barstate.isconfirmed and direction != 0 and direction != lastDir and passesFilter and corePasses and htfTrendOk(direction) and canOverride
 
 if newSignal
     lastDir := direction
