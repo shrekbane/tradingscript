@@ -8,7 +8,7 @@ A Pine Script v6 indicator for TradingView that grades every setup on a 0–10 c
 
 Signals only fire on a **confirmed (closed) bar** — there's no repainting of the core score or signal trigger.
 
-> This is an independent, clean-room implementation — not a copy of any private/invite-only script. Built from scratch in Pine Script v5.
+> This is an independent, clean-room implementation — not a copy of any private/invite-only script. Built from scratch in Pine Script v6.
 
 ## 📥 Installation
 
