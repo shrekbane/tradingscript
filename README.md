@@ -163,7 +163,7 @@ Here's what will actually land in your alert feed / notifications once a conditi
 > SL: 4016.690 (429 points)
 
 > **GradeRunner: Sell Signal**
-> SELL signal (B ★) on XAUUSD
+> SELL signal (A ★★) on XAUUSD
 > Entry: 4016.047–4016.690
 > TP1: 4008.120 (857 points)
 > TP2: 4003.835 (1286 points)
@@ -218,7 +218,9 @@ By default, only the most recent setup is shown on the chart. Turn on **Show Pre
 
 ## 📊 Grade win-rate stats
 
-A small second panel (bottom-right, on by default via **Show Grade Win-Rate Stats**) tracks, per grade (A+/A/B/C), how many setups reached TP1 before hitting SL vs. the reverse. It's pure measurement — it doesn't feed back into the score, grading, or signal logic in any way, it just gives you a running scoreboard to sanity-check whether the grading is actually working the way it's supposed to (e.g. are A+ setups really winning more often than C setups?).
+A small second panel (bottom-right, on by default via **Show Grade Win-Rate Stats**) tracks, per grade, how many setups reached TP1 before hitting SL vs. the reverse. It's pure measurement — it doesn't feed back into the score, grading, or signal logic in any way, it just gives you a running scoreboard to sanity-check whether the grading is actually working the way it's supposed to (e.g. is A+ really winning more often than A?).
+
+Only shows A+ and A rows — since Minimum Grade no longer offers B or C as filter choices, a real fired signal can never be graded B or C anymore, so those rows would only ever read "—" and were removed as dead clutter.
 
 Each trade's outcome is tallied against the grade it entered at, not whatever the grade has drifted to by the time it resolves. A row reads as `wins/total (win%)`, or `—` until a grade has at least one closed setup.
 
@@ -237,7 +239,7 @@ Each trade's outcome is tallied against the grade it entered at, not whatever th
 - ATR length, ATR averaging length (defines what counts as Low/Normal/High)
 
 **Signal / Risk**
-- Minimum grade to show a signal (C / B / A / A+)
+- Minimum grade to show a signal (A / A+ — narrowed from the original C/B/A/A+ range, since the hard gates already push toward high-conviction-only setups)
 - SL and TP1–3 ATR multiples
 - Entry Zone Width (x ATR) — set to 0 for a single exact entry price
 - Core Signal toggle + lookback
@@ -266,7 +268,7 @@ Each trade's outcome is tallied against the grade it entered at, not whatever th
 ## 💡 Tips
 
 - **Pair your chart timeframe with the HTF input.** As a rule of thumb, keep the higher-timeframe input roughly 6–12x your chart's timeframe. A 1H bias filter on a 1m chart is too slow to be meaningful — try 15–30min HTF instead. On a 5–15min chart, the 60min default is a reasonable starting point.
-- **Start with the minimum grade at "B"** and tighten to "A" or "A+" if you want fewer, higher-conviction signals. Loosening to "C" will show everything, including weak/mixed setups.
+- **Start with the minimum grade at "A"** (the default) and tighten to "A+" if you want fewer, even higher-conviction signals. C and B aren't offered as filter choices anymore — the hard gates already push toward high-conviction-only setups, so those tiers were never worth actually trading.
 - **If signals feel too reactive, try Core Signal.** It trades signal frequency for confirmation — good for choppier instruments, less useful on trending ones where you want to catch the move early.
 - **Watch the Volatility row.** A signal firing during "High" volatility has meaningfully wider stops — factor that into position sizing.
 - **Test before you trust it.** Run it on your instrument and timeframe with alerts on for a while before using it to size real trades.

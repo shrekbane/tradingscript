@@ -48,7 +48,14 @@ srConfirmBars = input.int(10, "Confirmation Window (bars)", minval=1, group=grpS
 srShowEngulf = input.bool(true, "Show Engulfing Candle Markers", group=grpSR)
 
 grpSignal = "Signal / Risk"
-minGradeInput = input.string("B", "Minimum Grade to Show Signal", options=["C","B","A","A+"], group=grpSignal)
+// Narrowed to A/A+ only — C and B are still fully computable internally
+// (gradeOf/gradeRank still handle all four letters, and the Grade Win-Rate
+// Stats panel still has rows for them), but given how far the hard gates
+// (HTF, MACD, S/R confirmation) already push toward high-conviction-only
+// setups, a signal weak enough to only clear C or B was never something
+// worth actually trading — so those tiers are no longer offered as a
+// filter choice, rather than ripping out grading/scoring entirely.
+minGradeInput = input.string("A", "Minimum Grade to Show Signal", options=["A","A+"], group=grpSignal)
 slMult  = input.float(1.0, "Stop Loss (x ATR)", step=0.1, group=grpSignal)
 tp1Mult = input.float(2.0, "TP1 (x ATR)", step=0.1, group=grpSignal)
 tp2Mult = input.float(3.0, "TP2 (x ATR)", step=0.1, group=grpSignal)
@@ -864,7 +871,12 @@ if showTable
 // scoreboard so grading quality can be sanity-checked over time. Needs a
 // reasonable sample size per grade before the percentages mean much.
 if showGradeStats
-    var table statsTable = table.new(position.bottom_right, 2, 5, border_width=1, border_color=color.new(chart.fg_color, 80))
+    // Only A+/A rows shown — B/C can no longer fire a real signal now that
+    // Minimum Grade only offers A/A+, so those rows would only ever read
+    // "—" and were just dead clutter. gradeWins/gradeLosses (size 4) and
+    // gradeRank() are unchanged internally — indices 0/1 (C/B) simply never
+    // get written to anymore; nothing here relies on shrinking the array.
+    var table statsTable = table.new(position.bottom_right, 2, 3, border_width=1, border_color=color.new(chart.fg_color, 80))
 
     table.cell(statsTable, 0, 0, "Grade", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
     table.cell(statsTable, 1, 0, "TP1 before SL", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_right, text_size=tableSize)
@@ -874,9 +886,3 @@ if showGradeStats
 
     table.cell(statsTable, 0, 2, "A", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
     table.cell(statsTable, 1, 2, gradeWinRateStr(2), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
-
-    table.cell(statsTable, 0, 3, "B", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
-    table.cell(statsTable, 1, 3, gradeWinRateStr(1), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
-
-    table.cell(statsTable, 0, 4, "C", bgcolor=panelBg, text_color=labelCol, text_halign=text.align_left, text_size=tableSize)
-    table.cell(statsTable, 1, 4, gradeWinRateStr(0), bgcolor=panelBg, text_color=valueCol, text_halign=text.align_right, text_size=tableSize)
