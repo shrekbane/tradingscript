@@ -152,30 +152,32 @@ Here's what will actually land in your alert feed / notifications once a conditi
 > **GradeRunner: Buy Signal**
 > BUY signal (A ★★) on XAUUSD
 > Entry: 4020.975
-> TP1: 4029.545
-> TP2: 4033.830
-> SL: 4016.690
+> TP1: 4029.545 (857 pips)
+> TP2: 4033.830 (1286 pips)
+> SL: 4016.690 (429 pips)
 
 > **GradeRunner: Sell Signal**
 > SELL signal (B ★) on XAUUSD
 > Entry: 4016.690
-> TP1: 4008.120
-> TP2: 4003.835
-> SL: 4020.975
+> TP1: 4008.120 (857 pips)
+> TP2: 4003.835 (1286 pips)
+> SL: 4020.975 (429 pips)
 
 > **GradeRunner: TP1 Hit**
-> XAUUSD: TP1 hit @ 4029.545
+> XAUUSD: TP1 hit @ 4029.545 (+857 pips) — stop moved to breakeven (4020.975)
 
 > **GradeRunner: TP2 Hit**
-> XAUUSD: TP2 hit @ 4033.830
+> XAUUSD: TP2 hit @ 4033.830 (+1286 pips)
 
 > **GradeRunner: TP3 Hit**
-> XAUUSD: TP3 hit @ 4038.115
+> XAUUSD: TP3 hit @ 4038.115 (+1714 pips)
 
 > **GradeRunner: Stop Loss Hit**
-> XAUUSD: Stop Loss hit @ 4016.690
+> XAUUSD: Stop Loss hit @ 4016.690 (-429 pips)
 
 TP3 is intentionally left out of the Buy/Sell alert message — by the time price reaches it, you should already be watching the chart.
+
+Pip figures use a broker-style convention that varies by instrument: 0.0001 for standard forex pairs, 0.01 for XAUUSD (100 pips = $1), and a rough 1.0-per-price-unit approximation for crypto pairs, since pips aren't a standard crypto concept.
 
 If you select the named conditions (Buy Signal, Sell Signal, TP1/TP2/TP3 Hit, Stop Loss Hit) in Create Alert, the message uses TradingView's own placeholders instead (e.g. "XAUUSD: TP1 hit at 4025.26"). Pick "Any alert() function call" if you want the richer version above with grade and star rating included.
 
