@@ -33,7 +33,7 @@ atrSmaLen = input.int(50, "ATR Average Length (for Low/Normal/High)", group=grpV
 // actually allowed to fire — see the "S/R Diagnostics" section further down
 // for the zone-tracking logic itself, and the "S/R FLIP REJECT CONFIRMATION"
 // block near the signal trigger for how the gate delays entry.
-grpSR = "S/R Diagnostics (WIP)"
+grpSR = "S/R Confirmation"
 srPivotLen = input.int(5, "Pivot Lookback (bars each side)", minval=1, group=grpSR)
 srShowZones = input.bool(true, "Plot S/R Zone Lines on Chart", group=grpSR)
 // On by default: validated across enough real setups (consistent RBS/SBR

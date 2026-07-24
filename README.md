@@ -225,7 +225,7 @@ Each trade's outcome is tallied against the grade it entered at, not whatever th
 - Volatility scaling toggle + Low/High multipliers
 - Lock new signals until TP1 or SL hit (one-trade-at-a-time toggle)
 
-**S/R Diagnostics (WIP)**
+**S/R Confirmation**
 - Pivot Lookback (bars each side)
 - Plot S/R Zone Lines on Chart
 - Require S/R Flip Reject to Confirm Entry (the delayed confirmation gate)
