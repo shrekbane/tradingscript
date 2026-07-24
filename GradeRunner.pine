@@ -29,9 +29,9 @@ atrSmaLen = input.int(50, "ATR Average Length (for Low/Normal/High)", group=grpV
 grpSignal = "Signal / Risk"
 minGradeInput = input.string("B", "Minimum Grade to Show Signal", options=["C","B","A","A+"], group=grpSignal)
 slMult  = input.float(1.0, "Stop Loss (x ATR)", step=0.1, group=grpSignal)
-tp1Mult = input.float(1.0, "TP1 (x ATR)", step=0.1, group=grpSignal)
-tp2Mult = input.float(2.0, "TP2 (x ATR)", step=0.1, group=grpSignal)
-tp3Mult = input.float(3.0, "TP3 (x ATR)", step=0.1, group=grpSignal)
+tp1Mult = input.float(2.0, "TP1 (x ATR)", step=0.1, group=grpSignal)
+tp2Mult = input.float(3.0, "TP2 (x ATR)", step=0.1, group=grpSignal)
+tp3Mult = input.float(4.0, "TP3 (x ATR)", step=0.1, group=grpSignal)
 extendBars = input.int(20, "Extend Lines (bars)", group=grpSignal)
 
 // Core Signal: an extra, stricter gate on top of the confluence score. The
@@ -402,10 +402,21 @@ hitSL  = inTrade and not newSignal and not slHit  and (tradeDir == 1 ? low  <= s
 if hitTP1
     tp1Hit := true
     array.set(gradeWins, gradeRank(tradeGrade) - 1, array.get(gradeWins, gradeRank(tradeGrade) - 1) + 1)
+    // Move the stop to breakeven now that TP1 has locked in initial profit —
+    // moves both the tracked price (so hitSL below checks against the new
+    // level) and, if drawn, the actual SL line/label on the chart, so the
+    // chart never shows a stale stop that no longer matches reality.
+    slPrice := entryPrice
     if showLabels
+        if array.size(slLines) > 0
+            line.set_y1(array.get(slLines, array.size(slLines) - 1), slPrice)
+            line.set_y2(array.get(slLines, array.size(slLines) - 1), slPrice)
+        if array.size(slLbls) > 0
+            label.set_y(array.get(slLbls, array.size(slLbls) - 1), slPrice)
+            label.set_text(array.get(slLbls, array.size(slLbls) - 1), "BE " + str.tostring(slPrice, format.mintick))
         array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP1 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
     if alertsAllowed
-        alert(syminfo.ticker + ": TP1 hit @ " + str.tostring(tp1Price, format.mintick), alert.freq_once_per_bar_close)
+        alert(syminfo.ticker + ": TP1 hit @ " + str.tostring(tp1Price, format.mintick) + " — stop moved to breakeven (" + str.tostring(slPrice, format.mintick) + ")", alert.freq_once_per_bar_close)
 
 if hitTP2
     tp2Hit := true
@@ -425,10 +436,14 @@ if hitSL
     if not tp1Hit
         array.set(gradeLosses, gradeRank(tradeGrade) - 1, array.get(gradeLosses, gradeRank(tradeGrade) - 1) + 1)
     slHit := true
+    // Once TP1 has hit, slPrice has already been moved to breakeven above,
+    // so this is no longer a real loss — label/alert wording reflects that
+    // instead of saying "SL hit" (which would read as a losing exit).
+    hitTag = tp1Hit ? "BE hit" : "SL hit"
     if showLabels
-        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? low : high, "SL hit", style=label.style_none, textcolor=palBear, size=size.tiny, yloc=tradeDir == 1 ? yloc.belowbar : yloc.abovebar))
+        array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? low : high, hitTag, style=label.style_none, textcolor=palBear, size=size.tiny, yloc=tradeDir == 1 ? yloc.belowbar : yloc.abovebar))
     if alertsAllowed
-        alert(syminfo.ticker + ": Stop Loss hit @ " + str.tostring(slPrice, format.mintick), alert.freq_once_per_bar_close)
+        alert(syminfo.ticker + ": " + (tp1Hit ? "Breakeven hit @ " : "Stop Loss hit @ ") + str.tostring(slPrice, format.mintick), alert.freq_once_per_bar_close)
 
 // Trade is considered closed once SL is hit, or once TP3 (final target) is hit
 // (this happens regardless of Alert Hours — only the alert itself is gated).

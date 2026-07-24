@@ -263,7 +263,7 @@
       <div class="feature">
         <div class="icon blue">◆</div>
         <h3>Auto entry / SL / 3 TPs</h3>
-        <p>ATR-based stop loss and three take-profits (~1x / 2x / 3x ATR by default, roughly 1:1, 1:2, 1:3 risk:reward), plotted live on the chart.</p>
+        <p>ATR-based stop loss and three take-profits (2x / 3x / 4x ATR against a 1x ATR stop by default, roughly 2:1, 3:1, 4:1 risk:reward), plotted live on the chart.</p>
       </div>
       <div class="feature">
         <div class="icon teal">▲</div>
@@ -295,6 +295,11 @@
         <h3>Grade win-rate stats</h3>
         <p>A second panel tracks, per grade, how often setups reached TP1 before SL vs. the reverse — pure measurement, no effect on signal logic.</p>
       </div>
+      <div class="feature">
+        <div class="icon teal">🔐</div>
+        <h3>Breakeven after TP1</h3>
+        <p>The moment TP1 hits, the stop automatically moves to entry — not just a reminder, the tracked SL and drawn line move with it. If price later returns to that level, the alert says "Breakeven hit" instead of "Stop Loss hit."</p>
+      </div>
     </div>
   </div>
 </section>
@@ -312,21 +317,21 @@
       <div class="nicon buy">▲</div>
       <div style="flex:1">
         <div class="notif-head"><div class="title">GradeRunner: Buy Signal</div><div class="time">09:23</div></div>
-        <div class="msg">BUY signal (A ★★) on XAUUSD<br>Entry: 4020.975<br>TP1: 4025.260<br>TP2: 4029.545<br>SL: 4016.690</div>
+        <div class="msg">BUY signal (A ★★) on XAUUSD<br>Entry: 4020.975<br>TP1: 4029.545<br>TP2: 4033.830<br>SL: 4016.690</div>
       </div>
     </div>
     <div class="notif">
       <div class="nicon sell">▼</div>
       <div style="flex:1">
         <div class="notif-head"><div class="title">GradeRunner: Sell Signal</div><div class="time">09:31</div></div>
-        <div class="msg">SELL signal (B ★) on XAUUSD<br>Entry: 4016.690<br>TP1: 4012.405<br>TP2: 4008.120<br>SL: 4020.975</div>
+        <div class="msg">SELL signal (B ★) on XAUUSD<br>Entry: 4016.690<br>TP1: 4008.120<br>TP2: 4003.835<br>SL: 4020.975</div>
       </div>
     </div>
     <div class="notif">
       <div class="nicon buy">✓</div>
       <div style="flex:1">
         <div class="notif-head"><div class="title">GradeRunner: TP1 Hit</div><div class="time">09:38</div></div>
-        <div class="msg">XAUUSD: TP1 hit @ 4025.260</div>
+        <div class="msg">XAUUSD: TP1 hit @ 4029.545 — stop moved to breakeven (4020.975)</div>
       </div>
     </div>
     <div class="notif">
@@ -337,7 +342,7 @@
       </div>
     </div>
 
-    <p class="section-sub" style="margin-top:20px; margin-bottom:0;">TP3 is intentionally left out of the Buy/Sell alert message — by the time price reaches it, you should already be watching the chart.</p>
+    <p class="section-sub" style="margin-top:20px; margin-bottom:0;">TP3 is intentionally left out of the Buy/Sell alert message — by the time price reaches it, you should already be watching the chart. If price returns to breakeven after TP1 has already hit, the dynamic message says "Breakeven hit" instead of "Stop Loss hit," so a flat exit isn't mistaken for a loss.</p>
   </div>
 </section>
 

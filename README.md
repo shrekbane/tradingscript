@@ -73,7 +73,7 @@ Once a signal fires, the script plots:
 
 - 🔵 **Entry** — the close of the signal bar (solid blue line)
 - 🟥 **Stop loss** — ATR-based distance from entry (red line)
-- **TP1 / TP2 / TP3** — three ATR-based targets, dashed and drawn in a neutral color that auto-adapts to your chart theme (default ~1x / 2x / 3x ATR, giving roughly 1:1, 1:2, 1:3 risk:reward)
+- **TP1 / TP2 / TP3** — three ATR-based targets, dashed and drawn in a neutral color that auto-adapts to your chart theme (default 2x / 3x / 4x ATR against a 1x ATR stop, giving roughly 2:1, 3:1, 4:1 risk:reward)
 
 All four ATR multiples are adjustable in settings. All colors on the chart (entry/SL/TP lines, the signal badge, EMA lines, and the info table) are chosen to hold contrast on both light and dark TradingView themes — nothing is tuned for one theme only.
 
@@ -96,6 +96,12 @@ By default, the confluence score keeps evaluating every bar regardless of whethe
 
 There's a deliberate one-bar lag built in: eligibility to override starts the bar *after* TP1/SL is actually touched, not the same bar, so this stays non-repainting.
 
+### 🔐 Breakeven after TP1
+
+The moment TP1 hits, the stop loss automatically moves to your entry price — the trade can no longer turn into a net loss from that point on. This isn't a reminder you have to act on; the script's own SL tracking moves with it, so the drawn SL line on the chart shifts to entry and any future alert checks against the new breakeven level, not the original stop.
+
+Because of this, if price comes back and touches that level afterward, it's not really a "stop loss" anymore — the label and alert message both say **"BE hit"** / **"Breakeven hit"** instead of "SL hit," so you're not caught off guard thinking the trade lost when it actually just closed flat after already banking TP1.
+
 ---
 
 ## 🔔 Alerts
@@ -110,6 +116,8 @@ Six alert conditions are built in, each pickable individually in TradingView's "
 
 There's also a dynamic, multi-line `alert()` message (selectable as "Any alert() function call") that spells out the entry, TP1, TP2, and SL levels on their own lines — so the exact numbers to act on are readable straight from the notification, without needing to cross-check the chart. This matters in practice: if the indicator is later removed and re-added (or the chart otherwise reloads), Pine recalculates history against each bar's *settled* close, which can drift a pip or two from the *live* close that was actually used when the alert fired — so the chart's redrawn entry/SL/TP lines aren't guaranteed to exactly match what a past alert said. The alert message itself is the authoritative record of what actually fired.
 
+The dynamic TP1 Hit message also confirms the stop moving to breakeven, and — if price later comes back to that level — the dynamic Stop Loss Hit message says "Breakeven hit" instead of "Stop Loss hit," so you're not misled into thinking a trade lost when it actually already banked TP1 first. The *named* alert conditions (picked individually in Create Alert, rather than "Any alert() function call") keep their generic TradingView-placeholder wording regardless — this richer, context-aware phrasing only shows up in the dynamic message.
+
 ### 👀 What to look for — example alert previews
 
 Here's what will actually land in your alert feed / notifications once a condition fires (example prices shown, yours will reflect the live market):
@@ -117,25 +125,25 @@ Here's what will actually land in your alert feed / notifications once a conditi
 > **GradeRunner: Buy Signal**
 > BUY signal (A ★★) on XAUUSD
 > Entry: 4020.975
-> TP1: 4025.260
-> TP2: 4029.545
+> TP1: 4029.545
+> TP2: 4033.830
 > SL: 4016.690
 
 > **GradeRunner: Sell Signal**
 > SELL signal (B ★) on XAUUSD
 > Entry: 4016.690
-> TP1: 4012.405
-> TP2: 4008.120
+> TP1: 4008.120
+> TP2: 4003.835
 > SL: 4020.975
 
 > **GradeRunner: TP1 Hit**
-> XAUUSD: TP1 hit @ 4025.260
+> XAUUSD: TP1 hit @ 4029.545
 
 > **GradeRunner: TP2 Hit**
-> XAUUSD: TP2 hit @ 4029.545
+> XAUUSD: TP2 hit @ 4033.830
 
 > **GradeRunner: TP3 Hit**
-> XAUUSD: TP3 hit @ 4033.829
+> XAUUSD: TP3 hit @ 4038.115
 
 > **GradeRunner: Stop Loss Hit**
 > XAUUSD: Stop Loss hit @ 4016.690
