@@ -4,7 +4,7 @@
   <img src="./graderunner.png" alt="GradeRunner" width="320">
 </p>
 
-A Pine Script v5 indicator for TradingView that grades every setup on a 0–10 confluence score, then auto-plots an entry, stop loss, and three take-profit levels the moment a graded signal fires. Built for traders who want a structured, rules-based way to combine trend, momentum, higher-timeframe bias, and volatility into a single readable signal — instead of eyeballing five indicators separately.
+A Pine Script v6 indicator for TradingView that grades every setup on a 0–10 confluence score, then auto-plots an entry, stop loss, and three take-profit levels the moment a graded signal fires. Built for traders who want a structured, rules-based way to combine trend, momentum, higher-timeframe bias, and volatility into a single readable signal — instead of eyeballing five indicators separately.
 
 Signals only fire on a **confirmed (closed) bar** — there's no repainting of the core score or signal trigger.
 
