@@ -326,6 +326,11 @@
         <h3>S/R flip confirmation</h3>
         <p>Tracks the latest swing high/low and, once broken, watches for a reject at the flipped zone (RBS/SBR) before a signal is allowed to fire — on by default, with the tracked zones plottable directly on the chart.</p>
       </div>
+      <div class="feature">
+        <div class="icon blue">🎯</div>
+        <h3>Entry Zone</h3>
+        <p>Entry is shown as a small shaded band, not one exact price, extending in the direction you'd be "chasing" a late fill. SL/TP still calculate off the exact entry price — this is a display change only.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -343,14 +348,14 @@
       <div class="nicon buy">▲</div>
       <div style="flex:1">
         <div class="notif-head"><div class="title">GradeRunner: Buy Signal</div><div class="time">09:23</div></div>
-        <div class="msg">BUY signal (A ★★) on XAUUSD<br>Entry: 4020.975<br>TP1: 4029.545 (857 points)<br>TP2: 4033.830 (1286 points)<br>SL: 4016.690 (429 points)</div>
+        <div class="msg">BUY signal (A ★★) on XAUUSD<br>Entry: 4020.975–4021.618<br>TP1: 4029.545 (857 points)<br>TP2: 4033.830 (1286 points)<br>SL: 4016.690 (429 points)</div>
       </div>
     </div>
     <div class="notif">
       <div class="nicon sell">▼</div>
       <div style="flex:1">
         <div class="notif-head"><div class="title">GradeRunner: Sell Signal</div><div class="time">09:31</div></div>
-        <div class="msg">SELL signal (B ★) on XAUUSD<br>Entry: 4016.690<br>TP1: 4008.120 (857 points)<br>TP2: 4003.835 (1286 points)<br>SL: 4020.975 (429 points)</div>
+        <div class="msg">SELL signal (B ★) on XAUUSD<br>Entry: 4016.047–4016.690<br>TP1: 4008.120 (857 points)<br>TP2: 4003.835 (1286 points)<br>SL: 4020.975 (429 points)</div>
       </div>
     </div>
     <div class="notif">
@@ -368,7 +373,7 @@
       </div>
     </div>
 
-    <p class="section-sub" style="margin-top:20px; margin-bottom:0;">TP3 is intentionally left out of the Buy/Sell alert message — by the time price reaches it, you should already be watching the chart. If price returns to breakeven after TP1 has already hit, the dynamic message says "Breakeven hit" instead of "Stop Loss hit," so a flat exit isn't mistaken for a loss. Point figures use a broker-style convention that varies by instrument: 0.0001 for standard forex pairs, 0.01 for XAUUSD (100 points = $1), and a rough 1.0-per-price-unit approximation for crypto pairs, since "points" isn't a standard crypto concept.</p>
+    <p class="section-sub" style="margin-top:20px; margin-bottom:0;">TP3 is intentionally left out of the Buy/Sell alert message — by the time price reaches it, you should already be watching the chart. If price returns to breakeven after TP1 has already hit, the dynamic message says "Breakeven hit" instead of "Stop Loss hit," so a flat exit isn't mistaken for a loss. Entry is shown as a range (the Entry Zone) rather than one exact price. Point figures use a broker-style convention that varies by instrument: 0.0001 for standard forex pairs, 0.01 for XAUUSD (100 points = $1), and a rough 1.0-per-price-unit approximation for crypto pairs, since "points" isn't a standard crypto concept.</p>
   </div>
 </section>
 
@@ -437,6 +442,7 @@
         <ul>
           <li>Minimum grade (C / B / A / A+)</li>
           <li>SL and TP1–3 ATR multiples</li>
+          <li>Entry Zone width (0 = single price)</li>
           <li>Core Signal toggle + lookback</li>
           <li>Volatility scaling + multipliers</li>
         </ul>

@@ -98,11 +98,17 @@ This only tracks a single zone in each direction at a time (the most recent pivo
 
 Once a signal fires, the script plots:
 
-- 🔵 **Entry** — the close of the signal bar (solid blue line)
+- 🔵 **Entry** — the close of the signal bar (solid blue line), plus a small shaded **Entry Zone** around it (see below)
 - 🟥 **Stop loss** — ATR-based distance from entry (red line)
 - **TP1 / TP2 / TP3** — three ATR-based targets, dashed and drawn in a neutral color that auto-adapts to your chart theme (default 2x / 3x / 4x ATR against a 1x ATR stop, giving roughly 2:1, 3:1, 4:1 risk:reward)
 
 All four ATR multiples are adjustable in settings. All colors on the chart (entry/SL/TP lines, the signal badge, EMA lines, and the info table) are chosen to hold contrast on both light and dark TradingView themes — nothing is tuned for one theme only.
+
+### 🎯 Entry Zone
+
+Rather than treating entry as one exact price, a small shaded box extends from the exact entry price in the "chasing" direction — above entry for a buy, below entry for a sell (default width 0.15x ATR, volatility-scaled). The idea: if you see the alert a little late, seeing price still inside that shaded zone tells you it's not too late to reasonably act on it, instead of assuming you missed it because price has already moved past the single number.
+
+The entry label and the alert message both show this as a range (e.g. "4074.795–4076.080") rather than one price. This is purely a display change — the stop loss and take-profits still calculate off the exact original entry price no matter where within the zone you actually get filled, so risk:reward isn't affected. Set "Entry Zone Width" to 0 in settings to go back to a single exact price.
 
 ### 🌡️ Volatility-scaled stops (on by default)
 
@@ -151,14 +157,14 @@ Here's what will actually land in your alert feed / notifications once a conditi
 
 > **GradeRunner: Buy Signal**
 > BUY signal (A ★★) on XAUUSD
-> Entry: 4020.975
+> Entry: 4020.975–4021.618
 > TP1: 4029.545 (857 points)
 > TP2: 4033.830 (1286 points)
 > SL: 4016.690 (429 points)
 
 > **GradeRunner: Sell Signal**
 > SELL signal (B ★) on XAUUSD
-> Entry: 4016.690
+> Entry: 4016.047–4016.690
 > TP1: 4008.120 (857 points)
 > TP2: 4003.835 (1286 points)
 > SL: 4020.975 (429 points)
@@ -175,7 +181,7 @@ Here's what will actually land in your alert feed / notifications once a conditi
 > **GradeRunner: Stop Loss Hit**
 > XAUUSD: Stop Loss hit @ 4016.690 (-429 points)
 
-TP3 is intentionally left out of the Buy/Sell alert message — by the time price reaches it, you should already be watching the chart.
+TP3 is intentionally left out of the Buy/Sell alert message — by the time price reaches it, you should already be watching the chart. Entry is shown as a range (the Entry Zone) rather than one exact price — see the Entry Zone section above.
 
 Point figures use a broker-style convention that varies by instrument: 0.0001 for standard forex pairs, 0.01 for XAUUSD (100 points = $1), and a rough 1.0-per-price-unit approximation for crypto pairs, since "points" isn't a standard crypto concept.
 
@@ -233,6 +239,7 @@ Each trade's outcome is tallied against the grade it entered at, not whatever th
 **Signal / Risk**
 - Minimum grade to show a signal (C / B / A / A+)
 - SL and TP1–3 ATR multiples
+- Entry Zone Width (x ATR) — set to 0 for a single exact entry price
 - Core Signal toggle + lookback
 - Volatility scaling toggle + Low/High multipliers
 - Lock new signals until TP1 or SL hit (one-trade-at-a-time toggle)

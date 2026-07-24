@@ -55,6 +55,15 @@ tp2Mult = input.float(3.0, "TP2 (x ATR)", step=0.1, group=grpSignal)
 tp3Mult = input.float(4.0, "TP3 (x ATR)", step=0.1, group=grpSignal)
 extendBars = input.int(20, "Extend Lines (bars)", group=grpSignal)
 
+// Entry Zone: rather than a single exact price, entries are shown as a
+// small tolerance band extending from the exact signal price in the
+// "chasing" direction (above entry for a buy, below entry for a sell) — so
+// seeing the alert a little late doesn't read as "I missed it," as long as
+// price is still inside the zone. Purely a display/alert change: SL/TP and
+// their point distances still anchor to the exact original entry price,
+// same as before.
+entryZoneMult = input.float(0.15, "Entry Zone Width (x ATR)", step=0.05, minval=0, group=grpSignal)
+
 // Structure-based SL/TP: instead of a fixed ATR distance, place the stop
 // just beyond the nearest swing point behind entry, and targets at the next
 // swing points ahead of entry. Off by default — untested against real
@@ -519,6 +528,7 @@ gradeWinRateStr(idx) =>
 
 // Arrays (not single handles) so multiple past setups can be kept on chart
 // at once when "Show Previous Setups" is enabled.
+var box[]   entryZoneBoxes = array.new_box()
 var line[]  entryLines = array.new_line()
 var line[]  slLines    = array.new_line()
 var line[]  tp1Lines   = array.new_line()
@@ -541,6 +551,8 @@ var label[] hitLbls    = array.new_label()
 trimSetups() =>
     keepBadge = showHistory ? maxSetups - 1 : 0
     keepRest  = 0
+    while array.size(entryZoneBoxes) > keepRest
+        box.delete(array.shift(entryZoneBoxes))
     while array.size(entryLines) > keepRest
         line.delete(array.shift(entryLines))
     while array.size(slLines) > keepRest
@@ -632,6 +644,17 @@ if newSignal
 
     inTrade    := true
 
+    // Entry Zone: a tolerance band extending from the exact entry price in
+    // the "chasing" direction only (above entry for a buy, below entry for
+    // a sell) — the opposite direction would just be an even better price,
+    // not a "did I miss it" concern, so the zone doesn't need to extend
+    // that way. Purely a display concept: SL/TP still anchor to the exact
+    // entryPrice regardless of where within this zone someone actually
+    // gets filled.
+    entryZoneWidth = atrVal * entryZoneMult * volFactor
+    entryZoneLo = signalDir == 1 ? entryPrice : entryPrice - entryZoneWidth
+    entryZoneHi = signalDir == 1 ? entryPrice + entryZoneWidth : entryPrice
+
     trimSetups()
 
     if showLabels
@@ -642,13 +665,16 @@ if newSignal
         tpCol    = palNeutral
         slCol    = palBear
 
+        if entryZoneMult > 0
+            array.push(entryZoneBoxes, box.new(bar_index, entryZoneHi, bar_index + extendBars, entryZoneLo, border_color=color.new(entryCol, 30), border_width=1, bgcolor=color.new(entryCol, 70)))
         array.push(entryLines, line.new(bar_index, entryPrice, bar_index + extendBars, entryPrice, color=entryCol, style=line.style_solid,  width=1))
         array.push(slLines,    line.new(bar_index, slPrice,    bar_index + extendBars, slPrice,    color=slCol,    style=line.style_solid,  width=1))
         array.push(tp1Lines,   line.new(bar_index, tp1Price,   bar_index + extendBars, tp1Price,   color=tpCol,    style=line.style_dashed, width=1))
         array.push(tp2Lines,   line.new(bar_index, tp2Price,   bar_index + extendBars, tp2Price,   color=tpCol,    style=line.style_dashed, width=1))
         array.push(tp3Lines,   line.new(bar_index, tp3Price,   bar_index + extendBars, tp3Price,   color=tpCol,    style=line.style_dashed, width=1))
 
-        array.push(entryLbls, label.new(bar_index + extendBars, entryPrice, "ENTRY " + str.tostring(entryPrice, format.mintick), style=label.style_none, textcolor=entryCol, size=size.small, textalign=text.align_left))
+        entryLblText = entryZoneMult > 0 ? "ENTRY " + str.tostring(entryZoneLo, format.mintick) + "–" + str.tostring(entryZoneHi, format.mintick) : "ENTRY " + str.tostring(entryPrice, format.mintick)
+        array.push(entryLbls, label.new(bar_index + extendBars, entryPrice, entryLblText, style=label.style_none, textcolor=entryCol, size=size.small, textalign=text.align_left))
         array.push(slLbls,    label.new(bar_index + extendBars, slPrice,  str.tostring(slPrice, format.mintick),  style=label.style_none, textcolor=slCol, size=size.small, textalign=text.align_left))
         array.push(tp1Lbls,   label.new(bar_index + extendBars, tp1Price, "TP1 " + str.tostring(tp1Price, format.mintick), style=label.style_none, textcolor=tpCol, size=size.small, textalign=text.align_left))
         array.push(tp2Lbls,   label.new(bar_index + extendBars, tp2Price, "TP2 " + str.tostring(tp2Price, format.mintick), style=label.style_none, textcolor=tpCol, size=size.small, textalign=text.align_left))
@@ -671,7 +697,8 @@ if newSignal
         // recalculates history against a settled (vs. live-streamed) close
         // for that bar. TP3 is intentionally left out: by the time price
         // reaches it, the user should already be watching the chart.
-        alertMsg = (signalDir == 1 ? "BUY" : "SELL") + " signal (" + signalGrade + " " + signalStars + ") on " + syminfo.ticker + "\nEntry: " + str.tostring(entryPrice, format.mintick) + "\nTP1: " + str.tostring(tp1Price, format.mintick) + " (" + points(tp1Price - entryPrice) + " points)" + "\nTP2: " + str.tostring(tp2Price, format.mintick) + " (" + points(tp2Price - entryPrice) + " points)" + "\nSL: " + str.tostring(slPrice, format.mintick) + " (" + points(slPrice - entryPrice) + " points)"
+        entryMsg = entryZoneMult > 0 ? str.tostring(entryZoneLo, format.mintick) + "–" + str.tostring(entryZoneHi, format.mintick) : str.tostring(entryPrice, format.mintick)
+        alertMsg = (signalDir == 1 ? "BUY" : "SELL") + " signal (" + signalGrade + " " + signalStars + ") on " + syminfo.ticker + "\nEntry: " + entryMsg + "\nTP1: " + str.tostring(tp1Price, format.mintick) + " (" + points(tp1Price - entryPrice) + " points)" + "\nTP2: " + str.tostring(tp2Price, format.mintick) + " (" + points(tp2Price - entryPrice) + " points)" + "\nSL: " + str.tostring(slPrice, format.mintick) + " (" + points(slPrice - entryPrice) + " points)"
         alert(alertMsg, alert.freq_once_per_bar_close)
 
 // ---------------- TP / SL HIT DETECTION & ALERTS ----------------
