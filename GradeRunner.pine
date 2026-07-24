@@ -360,24 +360,24 @@ starsOf(g) =>
     g == "A+" ? "★★★" : g == "A" ? "★★" : g == "B" ? "★" : ""
 stars = starsOf(grade)
 
-// Pip size varies by instrument, and there's no single Pine builtin for it —
-// syminfo.mintick is the smallest price increment, not necessarily a pip
-// (e.g. 5-decimal EURUSD quotes have a mintick 1/10th the size of a real
-// pip). Broker-style convention used here: 0.0001 for standard forex pairs
-// (0.01 for JPY pairs, which quote two decimals fewer), 0.01 for XAUUSD (a
-// common gold convention where 100 pips = $1), and 1.0 for crypto — that
-// last one is a rough, non-standard approximation (crypto doesn't really
-// use "pips"), adopted anyway for a consistent pip figure across every
-// instrument on the followed pairs list rather than mixing pips and raw
-// price distance in the same alert message.
-pipSize() =>
+// Point size varies by instrument, and there's no single Pine builtin for
+// it — syminfo.mintick is the smallest price increment, not necessarily a
+// real pip/point (e.g. 5-decimal EURUSD quotes have a mintick 1/10th the
+// size of a real pip). Broker-style convention used here: 0.0001 for
+// standard forex pairs (0.01 for JPY pairs, which quote two decimals
+// fewer), 0.01 for XAUUSD (a common gold convention where 100 points = $1),
+// and 1.0 for crypto — that last one is a rough, non-standard approximation
+// (crypto doesn't really use "points" this way), adopted anyway for a
+// consistent figure across every instrument on the followed pairs list
+// rather than mixing points and raw price distance in the same message.
+pointSize() =>
     isJPY    = str.contains(syminfo.ticker, "JPY")
     isXAU    = str.contains(syminfo.ticker, "XAU")
     isCrypto = syminfo.type == "crypto"
     isJPY ? 0.01 : isXAU ? 0.01 : isCrypto ? 1.0 : syminfo.type == "forex" ? 0.0001 : syminfo.mintick
 
-pips(distance) =>
-    str.tostring(math.round(math.abs(distance) / pipSize()))
+points(distance) =>
+    str.tostring(math.round(math.abs(distance) / pointSize()))
 
 // ---------------- CORE SIGNAL (breakout confirmation gate) ----------------
 coreBullTrigger = close > ta.highest(high[1], coreLookback)
@@ -671,7 +671,7 @@ if newSignal
         // recalculates history against a settled (vs. live-streamed) close
         // for that bar. TP3 is intentionally left out: by the time price
         // reaches it, the user should already be watching the chart.
-        alertMsg = (signalDir == 1 ? "BUY" : "SELL") + " signal (" + signalGrade + " " + signalStars + ") on " + syminfo.ticker + "\nEntry: " + str.tostring(entryPrice, format.mintick) + "\nTP1: " + str.tostring(tp1Price, format.mintick) + " (" + pips(tp1Price - entryPrice) + " pips)" + "\nTP2: " + str.tostring(tp2Price, format.mintick) + " (" + pips(tp2Price - entryPrice) + " pips)" + "\nSL: " + str.tostring(slPrice, format.mintick) + " (" + pips(slPrice - entryPrice) + " pips)"
+        alertMsg = (signalDir == 1 ? "BUY" : "SELL") + " signal (" + signalGrade + " " + signalStars + ") on " + syminfo.ticker + "\nEntry: " + str.tostring(entryPrice, format.mintick) + "\nTP1: " + str.tostring(tp1Price, format.mintick) + " (" + points(tp1Price - entryPrice) + " points)" + "\nTP2: " + str.tostring(tp2Price, format.mintick) + " (" + points(tp2Price - entryPrice) + " points)" + "\nSL: " + str.tostring(slPrice, format.mintick) + " (" + points(slPrice - entryPrice) + " points)"
         alert(alertMsg, alert.freq_once_per_bar_close)
 
 // ---------------- TP / SL HIT DETECTION & ALERTS ----------------
@@ -713,21 +713,21 @@ if hitTP1
             array.push(slLbls, label.new(entryBarIndex + extendBars, slPrice, "BE " + str.tostring(slPrice, format.mintick), style=label.style_none, textcolor=palBear, size=size.small, textalign=text.align_left))
         array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP1 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
     if alertsAllowed
-        alert(syminfo.ticker + ": TP1 hit @ " + str.tostring(tp1Price, format.mintick) + " (+" + pips(tp1Price - entryPrice) + " pips) — stop moved to breakeven (" + str.tostring(slPrice, format.mintick) + ")", alert.freq_once_per_bar_close)
+        alert(syminfo.ticker + ": TP1 hit @ " + str.tostring(tp1Price, format.mintick) + " (+" + points(tp1Price - entryPrice) + " points) — stop moved to breakeven (" + str.tostring(slPrice, format.mintick) + ")", alert.freq_once_per_bar_close)
 
 if hitTP2
     tp2Hit := true
     if showLabels
         array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP2 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
     if alertsAllowed
-        alert(syminfo.ticker + ": TP2 hit @ " + str.tostring(tp2Price, format.mintick) + " (+" + pips(tp2Price - entryPrice) + " pips)", alert.freq_once_per_bar_close)
+        alert(syminfo.ticker + ": TP2 hit @ " + str.tostring(tp2Price, format.mintick) + " (+" + points(tp2Price - entryPrice) + " points)", alert.freq_once_per_bar_close)
 
 if hitTP3
     tp3Hit := true
     if showLabels
         array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP3 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
     if alertsAllowed
-        alert(syminfo.ticker + ": TP3 hit @ " + str.tostring(tp3Price, format.mintick) + " (+" + pips(tp3Price - entryPrice) + " pips)", alert.freq_once_per_bar_close)
+        alert(syminfo.ticker + ": TP3 hit @ " + str.tostring(tp3Price, format.mintick) + " (+" + points(tp3Price - entryPrice) + " points)", alert.freq_once_per_bar_close)
 
 if hitSL
     if not tp1Hit
@@ -740,7 +740,7 @@ if hitSL
     if showLabels
         array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? low : high, hitTag, style=label.style_none, textcolor=palBear, size=size.tiny, yloc=tradeDir == 1 ? yloc.belowbar : yloc.abovebar))
     if alertsAllowed
-        alert(syminfo.ticker + ": " + (tp1Hit ? "Breakeven hit @ " : "Stop Loss hit @ ") + str.tostring(slPrice, format.mintick) + " (" + (tp1Hit ? pips(slPrice - entryPrice) : "-" + pips(slPrice - entryPrice)) + " pips)", alert.freq_once_per_bar_close)
+        alert(syminfo.ticker + ": " + (tp1Hit ? "Breakeven hit @ " : "Stop Loss hit @ ") + str.tostring(slPrice, format.mintick) + " (" + (tp1Hit ? points(slPrice - entryPrice) : "-" + points(slPrice - entryPrice)) + " points)", alert.freq_once_per_bar_close)
 
 // Trade is considered closed once SL is hit, or once TP3 (final target) is hit
 // (this happens regardless of Alert Hours — only the alert itself is gated).
