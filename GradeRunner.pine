@@ -26,6 +26,22 @@ grpVol = "Volatility"
 atrLen    = input.int(14, "ATR Length", group=grpVol)
 atrSmaLen = input.int(50, "ATR Average Length (for Low/Normal/High)", group=grpVol)
 
+// Support/Resistance polarity-flip confirmation. Tracks recent swing
+// pivots, watches for a "flip" (old resistance broken -> becomes a support
+// candidate = RBS; old support broken -> becomes a resistance candidate =
+// SBR), and can require a reject at that flipped zone before a signal is
+// actually allowed to fire — see the "S/R Diagnostics" section further down
+// for the zone-tracking logic itself, and the "S/R FLIP REJECT CONFIRMATION"
+// block near the signal trigger for how the gate delays entry.
+grpSR = "S/R Diagnostics (WIP)"
+srPivotLen = input.int(5, "Pivot Lookback (bars each side)", minval=1, group=grpSR)
+srShowZones = input.bool(true, "Plot S/R Zone Lines on Chart", group=grpSR)
+// On by default: validated across enough real setups (consistent RBS/SBR
+// rejects right after the signals that actually confirmed) to trust as the
+// default behavior now, rather than opt-in.
+srGateOn = input.bool(true, "Require S/R Flip Reject to Confirm Entry", group=grpSR)
+srConfirmBars = input.int(10, "Confirmation Window (bars)", minval=1, group=grpSR, active=srGateOn)
+
 grpSignal = "Signal / Risk"
 minGradeInput = input.string("B", "Minimum Grade to Show Signal", options=["C","B","A","A+"], group=grpSignal)
 slMult  = input.float(1.0, "Stop Loss (x ATR)", step=0.1, group=grpSignal)
@@ -161,6 +177,19 @@ htfTrendOk(dir) => (dir == 1 and htfBull) or (dir == -1 and not htfBull)
 rsiVal = ta.rsi(close, rsiLen)
 [macdLine, macdSignal, macdHist] = ta.macd(close, macdFast, macdSlow, macdSig)
 
+// Hard gate, same posture as htfTrendOk above: a signal is only allowed to
+// fire in the direction MACD Histogram already agrees with — unconditionally,
+// at every grade. Prompted by checking factor diagnostics across several real
+// B-grade setups: every one had MACD fully opposed (contributing zero to the
+// winning side) while Local Trend/HTF Bias/ADX were all maxed in agreement —
+// i.e. the "bigger picture" lined up but the most immediate momentum read
+// hadn't actually turned yet. Every A+/A example checked already had MACD
+// fully agreeing naturally, without this gate, so it's not expected to cost
+// much at the top end. MACD Histogram is scored as a flat binary (2 or 0,
+// no partial credit), so this is a plain agree/disagree check, not a
+// configurable minimum-strength threshold.
+macdOk(dir) => (dir == 1 and macdHist > 0) or (dir == -1 and macdHist < 0)
+
 // ---------------- TREND STRENGTH (DMI/ADX) ----------------
 [diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
 adxStrong = adxVal > 20
@@ -175,17 +204,85 @@ volState  = volRatio >= 1.2 ? "High" : volRatio <= 0.8 ? "Low" : "Normal"
 // Multiplier applied on top of the SL/TP ATR multiples below, based on volState.
 volFactor = not useVolScaling ? 1.0 : volState == "High" ? highVolFactor : volState == "Low" ? lowVolFactor : 1.0
 
+// ---------------- S/R POLARITY-FLIP TRACKING (diagnostics only) ----------------
+// Tracks the most recent confirmed swing high/low as a candidate zone. Once
+// price closes through it, the zone "flips" (old resistance becomes a support
+// candidate = RBS, old support becomes a resistance candidate = SBR) and we
+// watch for a retest: price wicking back into the zone but closing back away
+// from it (a reject, not a reclaim). Each reject is emitted as its own event
+// on that bar — same "let the user eyeball the count" approach as the
+// engulfing check — rather than requiring N rejects before emitting anything.
+// This is a single-zone-at-a-time simplification (not a history of every past
+// pivot) to keep the first pass simple and avoid the complexity that sank the
+// earlier "Avoid Entries Near Support/Resistance" feature. Purely additive:
+// does not touch scoring, gating, or signal timing.
+zoneTol = atrVal * 0.25
+
+pivotHigh = ta.pivothigh(srPivotLen, srPivotLen)
+pivotLow  = ta.pivotlow(srPivotLen, srPivotLen)
+
+var float resZone    = na // last confirmed pivot high (candidate resistance, or flipped-support once broken)
+var bool  resBroken  = false
+var float supZone    = na // last confirmed pivot low (candidate support, or flipped-resistance once broken)
+var bool  supBroken  = false
+
+if not na(pivotHigh)
+    resZone := pivotHigh
+    resBroken := false
+if not na(pivotLow)
+    supZone := pivotLow
+    supBroken := false
+
+// Confirmed close through a zone flips it.
+if not na(resZone) and not resBroken and close > resZone
+    resBroken := true
+if not na(supZone) and not supBroken and close < supZone
+    supBroken := true
+
+// RBS: old resistance (resZone), now flipped to support. A reject is a bar
+// that wicks down into the zone but still closes back above it.
+rbsReject = resBroken and not na(resZone) and low <= resZone + zoneTol and close > resZone
+// A confirmed close back below the zone invalidates the flip (real breakdown,
+// not a reject) — re-arm so we stop signaling rejects at a level that failed.
+if resBroken and not na(resZone) and close < resZone
+    resBroken := false
+
+// SBR: old support (supZone), now flipped to resistance. A reject is a bar
+// that wicks up into the zone but still closes back below it.
+sbrReject = supBroken and not na(supZone) and high >= supZone - zoneTol and close < supZone
+if supBroken and not na(supZone) and close > supZone
+    supBroken := false
+
+srSignal = rbsReject ? 1 : sbrReject ? -1 : 0
+
+// Optional visual of the tracked zones themselves, since a single Data Window
+// number on the reject bar doesn't show what zone it's referring to. Off by
+// default so it doesn't clutter the chart unless you're actively reviewing
+// this feature. Color reflects current role: resZone drawn palBear while
+// still untested resistance, palBull once flipped to (candidate) support —
+// and mirrored for supZone.
+plot(srShowZones ? resZone : na, "S/R: Resistance/Flipped-Support Zone", color=resBroken ? palBull : palBear, style=plot.style_circles, linewidth=1)
+plot(srShowZones ? supZone : na, "S/R: Support/Flipped-Resistance Zone", color=supBroken ? palBear : palBull, style=plot.style_circles, linewidth=1)
+
 // ---------------- CONFLUENCE SCORE (0-10, split bull/bear) ----------------
+// Each factor's bull/bear points are named (not just inlined into
+// bullPts/bearPts) so they can be exposed individually as Data Window
+// diagnostics below — lets a past signal's grade actually be explained
+// after the fact, instead of only showing the final badge.
 bullPts = 0.0
 bearPts = 0.0
 
 // 1) Local trend (2 pts)
-bullPts += trendBull ? 2.0 : 0.0
-bearPts += trendBull ? 0.0 : 2.0
+trendBullPts = trendBull ? 2.0 : 0.0
+trendBearPts = trendBull ? 0.0 : 2.0
+bullPts += trendBullPts
+bearPts += trendBearPts
 
 // 2) HTF bias (2 pts)
-bullPts += htfBull ? 2.0 : 0.0
-bearPts += htfBull ? 0.0 : 2.0
+htfBullPts = htfBull ? 2.0 : 0.0
+htfBearPts = htfBull ? 0.0 : 2.0
+bullPts += htfBullPts
+bearPts += htfBearPts
 
 // 3) RSI momentum (up to 2 pts, scaled by distance from 50)
 rsiBullPts = rsiVal > 50 ? math.min((rsiVal - 50) / 25 * 2, 2.0) : 0.0
@@ -194,13 +291,22 @@ bullPts += rsiBullPts
 bearPts += rsiBearPts
 
 // 4) MACD histogram direction (2 pts)
-bullPts += macdHist > 0 ? 2.0 : 0.0
-bearPts += macdHist > 0 ? 0.0 : 2.0
+macdBullPts = macdHist > 0 ? 2.0 : 0.0
+macdBearPts = macdHist > 0 ? 0.0 : 2.0
+bullPts += macdBullPts
+bearPts += macdBearPts
 
 // 5) ADX/DMI strength confirmation (2 pts, only if trend is strong)
+// Declared (defaulting to 0.0) before the if block, not just inside it, so
+// they're readable outside that scope for the diagnostics below — behavior
+// is identical, since they still land on 0.0 whenever adxStrong is false.
+adxBullPts = 0.0
+adxBearPts = 0.0
 if adxStrong
-    bullPts += diBull ? 2.0 : 0.0
-    bearPts += diBull ? 0.0 : 2.0
+    adxBullPts := diBull ? 2.0 : 0.0
+    adxBearPts := diBull ? 0.0 : 2.0
+bullPts += adxBullPts
+bearPts += adxBearPts
 
 score     = math.max(bullPts, bearPts)
 direction = bullPts > bearPts ? 1 : bullPts < bearPts ? -1 : 0
@@ -254,16 +360,56 @@ canOverride = not lockUntilTP1OrSL or not inTrade or tp1Hit or slHit
 // hasn't confirmed yet, the script keeps checking on every subsequent bar —
 // it doesn't get "stuck" thinking this direction was already handled.
 var int lastDir = 0
-newSignal = barstate.isconfirmed and direction != 0 and direction != lastDir and passesFilter and corePasses and htfTrendOk(direction) and canOverride
+signalCandidate = barstate.isconfirmed and direction != 0 and direction != lastDir and passesFilter and corePasses and htfTrendOk(direction) and macdOk(direction) and canOverride
+
+// ---------------- S/R FLIP REJECT CONFIRMATION (optional delayed gate) ----------------
+// When srGateOn is off, a candidate fires immediately, same as before this
+// feature existed. When srGateOn is on, a candidate doesn't fire right away
+// — its direction/grade get locked in as "pending," and the actual signal
+// only fires once a matching RBS/SBR reject (srSignal, computed in the S/R
+// Diagnostics section above) shows up within srConfirmBars bars afterward.
+// If the window lapses with no reject, the candidate is dropped silently
+// (no signal, no alert, lastDir never advances) — and since lastDir wasn't
+// advanced, a fresh pending attempt starts immediately on the next bar as
+// long as the underlying conditions still hold, matching the existing
+// "keep checking every bar, don't get stuck" philosophy already used for
+// lastDir/Core Signal above.
+var int    pendingDir   = 0
+var string pendingGrade = ""
+var int    pendingBar   = na
+
+if signalCandidate and direction != pendingDir
+    pendingDir   := direction
+    pendingGrade := grade
+    pendingBar   := bar_index
+
+srReject   = pendingDir == 1 ? rbsReject : pendingDir == -1 ? sbrReject : false
+srConfirmed = srGateOn and pendingDir != 0 and srReject and (bar_index - pendingBar) <= srConfirmBars
+
+// Expire a pending candidate once its window passes without a reject.
+if srGateOn and pendingDir != 0 and (bar_index - pendingBar) > srConfirmBars
+    pendingDir := 0
+
+// The direction/grade/stars a signal actually fires with — live values when
+// the S/R gate is off, the locked-in pending values (from the original
+// candidate bar) when it's on, so a signal firing on the later confirmation
+// bar can't end up using drifted live values.
+signalDir   = srGateOn ? pendingDir   : direction
+signalGrade = srGateOn ? pendingGrade : grade
+signalStars = starsOf(signalGrade)
+
+newSignal = srGateOn ? srConfirmed : signalCandidate
 
 if newSignal
-    lastDir := direction
+    lastDir := signalDir
+    if srGateOn
+        pendingDir := 0
 
 // newSignal (and therefore buySignal/sellSignal) still fires around the
 // clock regardless of Alert Hours — the badge/lines/table keep working.
 // alertsAllowed only gates whether that signal is also allowed to alert.
-buySignal  = newSignal and direction == 1 and alertsAllowed
-sellSignal = newSignal and direction == -1 and alertsAllowed
+buySignal  = newSignal and signalDir == 1 and alertsAllowed
+sellSignal = newSignal and signalDir == -1 and alertsAllowed
 
 // alertcondition() must run unconditionally every bar (can't live inside an
 // if block) so these show up as pickable conditions in TradingView's
@@ -275,6 +421,7 @@ alertcondition(buySignal or sellSignal, title="Buy or Sell Signal",  message="{{
 // ---------------- TRADE STATE TRACKING ----------------
 // (inTrade is declared earlier, alongside the other gating flags.)
 var float entryPrice = na
+var int   entryBarIndex = na
 var float slPrice = na
 var float tp1Price = na
 var float tp2Price = na
@@ -347,15 +494,16 @@ trimSetups() =>
         label.delete(array.shift(badgeLbls))
 
 if newSignal
-    entryPrice := close
-    tradeDir   := direction
-    tradeGrade := grade
+    entryPrice    := close
+    entryBarIndex := bar_index
+    tradeDir      := signalDir
+    tradeGrade    := signalGrade
     // volFactor stretches/compresses these ATR distances based on the
     // Low/Normal/High volatility read captured at the moment of entry.
-    slPrice    := direction == 1 ? close - atrVal * slMult  * volFactor : close + atrVal * slMult  * volFactor
-    tp1Price   := direction == 1 ? close + atrVal * tp1Mult * volFactor : close - atrVal * tp1Mult * volFactor
-    tp2Price   := direction == 1 ? close + atrVal * tp2Mult * volFactor : close - atrVal * tp2Mult * volFactor
-    tp3Price   := direction == 1 ? close + atrVal * tp3Mult * volFactor : close - atrVal * tp3Mult * volFactor
+    slPrice    := signalDir == 1 ? close - atrVal * slMult  * volFactor : close + atrVal * slMult  * volFactor
+    tp1Price   := signalDir == 1 ? close + atrVal * tp1Mult * volFactor : close - atrVal * tp1Mult * volFactor
+    tp2Price   := signalDir == 1 ? close + atrVal * tp2Mult * volFactor : close - atrVal * tp2Mult * volFactor
+    tp3Price   := signalDir == 1 ? close + atrVal * tp3Mult * volFactor : close - atrVal * tp3Mult * volFactor
     inTrade    := true
 
     trimSetups()
@@ -383,11 +531,11 @@ if newSignal
         // Green/red badge, e.g. "▲ BUY B ★" / "▼ SELL B ★" — spells out the
         // direction so the grade letter (A+/A/B/C) never gets mistaken for
         // a Buy/Sell abbreviation.
-        badgeArrow = direction == 1 ? "▲" : "▼"
-        badgeDir   = direction == 1 ? "BUY" : "SELL"
-        badgeText  = badgeArrow + " " + badgeDir + " " + grade + " " + stars
-        badgeCol   = direction == 1 ? palBull : palBear
-        array.push(badgeLbls, label.new(bar_index, direction == 1 ? low : high, badgeText, style=direction == 1 ? label.style_label_up : label.style_label_down, color=badgeCol, textcolor=color.white, size=size.small))
+        badgeArrow = signalDir == 1 ? "▲" : "▼"
+        badgeDir   = signalDir == 1 ? "BUY" : "SELL"
+        badgeText  = badgeArrow + " " + badgeDir + " " + signalGrade + " " + signalStars
+        badgeCol   = signalDir == 1 ? palBull : palBear
+        array.push(badgeLbls, label.new(bar_index, signalDir == 1 ? low : high, badgeText, style=signalDir == 1 ? label.style_label_up : label.style_label_down, color=badgeCol, textcolor=color.white, size=size.small))
 
     if alertsAllowed
         // Multi-line so the exact levels are readable straight from the
@@ -397,7 +545,7 @@ if newSignal
         // recalculates history against a settled (vs. live-streamed) close
         // for that bar. TP3 is intentionally left out: by the time price
         // reaches it, the user should already be watching the chart.
-        alertMsg = (direction == 1 ? "BUY" : "SELL") + " signal (" + grade + " " + stars + ") on " + syminfo.ticker + "\nEntry: " + str.tostring(entryPrice, format.mintick) + "\nTP1: " + str.tostring(tp1Price, format.mintick) + "\nTP2: " + str.tostring(tp2Price, format.mintick) + "\nSL: " + str.tostring(slPrice, format.mintick)
+        alertMsg = (signalDir == 1 ? "BUY" : "SELL") + " signal (" + signalGrade + " " + signalStars + ") on " + syminfo.ticker + "\nEntry: " + str.tostring(entryPrice, format.mintick) + "\nTP1: " + str.tostring(tp1Price, format.mintick) + "\nTP2: " + str.tostring(tp2Price, format.mintick) + "\nSL: " + str.tostring(slPrice, format.mintick)
         alert(alertMsg, alert.freq_once_per_bar_close)
 
 // ---------------- TP / SL HIT DETECTION & ALERTS ----------------
@@ -421,14 +569,22 @@ if hitTP1
     // moves both the tracked price (so hitSL below checks against the new
     // level) and, if drawn, the actual SL line/label on the chart, so the
     // chart never shows a stale stop that no longer matches reality.
+    // Deletes and recreates the line/label (at the original entry bar's x
+    // position, so it stays visually aligned) rather than moving them in
+    // place with line.set_y1/label.set_text — Pine caps the total number of
+    // drawing *modifications* across a script's full history recalculation
+    // much lower than the number of objects it allows creating/deleting, and
+    // enough historical TP1 hits eventually hit that cap
+    // ("modify_study_limit_exceeding"). Delete-then-recreate doesn't count
+    // against it.
     slPrice := entryPrice
     if showLabels
         if array.size(slLines) > 0
-            line.set_y1(array.get(slLines, array.size(slLines) - 1), slPrice)
-            line.set_y2(array.get(slLines, array.size(slLines) - 1), slPrice)
+            line.delete(array.pop(slLines))
+            array.push(slLines, line.new(entryBarIndex, slPrice, entryBarIndex + extendBars, slPrice, color=palBear, style=line.style_solid, width=1))
         if array.size(slLbls) > 0
-            label.set_y(array.get(slLbls, array.size(slLbls) - 1), slPrice)
-            label.set_text(array.get(slLbls, array.size(slLbls) - 1), "BE " + str.tostring(slPrice, format.mintick))
+            label.delete(array.pop(slLbls))
+            array.push(slLbls, label.new(entryBarIndex + extendBars, slPrice, "BE " + str.tostring(slPrice, format.mintick), style=label.style_none, textcolor=palBear, size=size.small, textalign=text.align_left))
         array.push(hitLbls, label.new(bar_index, tradeDir == 1 ? high : low, "TP1 hit", style=label.style_none, textcolor=palBull, size=size.tiny, yloc=tradeDir == 1 ? yloc.abovebar : yloc.belowbar))
     if alertsAllowed
         alert(syminfo.ticker + ": TP1 hit @ " + str.tostring(tp1Price, format.mintick) + " — stop moved to breakeven (" + str.tostring(slPrice, format.mintick) + ")", alert.freq_once_per_bar_close)
@@ -478,6 +634,22 @@ plot(showTrendLines ? emaSlow : na, "Slow EMA", color=palEmaSlow)
 
 // (Signal markers are drawn as the green/red "▲ Grade ★★" badge above, matching
 // the reference screenshot's marker style rather than a plain plotshape.)
+
+// ---------------- FACTOR DIAGNOSTICS (Data Window only) ----------------
+// Net point contribution (bull minus bear, -2..+2 range) per confluence
+// factor, plus the overall score and direction. All display=display.data_window
+// — invisible on the chart/price-scale/legend, visible only when hovering a
+// bar in TradingView's Data Window. Lets a past signal's grade be explained
+// after the fact (e.g. "this B was mostly HTF + RSI, with ADX contributing
+// nothing") without changing any scoring, gating, or signal logic.
+plot(trendBullPts - trendBearPts, "Diag: Local Trend (pts)",     display=display.data_window)
+plot(htfBullPts   - htfBearPts,   "Diag: HTF Bias (pts)",        display=display.data_window)
+plot(rsiBullPts   - rsiBearPts,   "Diag: RSI Momentum (pts)",    display=display.data_window)
+plot(macdBullPts  - macdBearPts,  "Diag: MACD Histogram (pts)",  display=display.data_window)
+plot(adxBullPts   - adxBearPts,   "Diag: ADX/DMI Strength (pts)",display=display.data_window)
+plot(score,     "Diag: Score",     display=display.data_window)
+plot(direction, "Diag: Direction", display=display.data_window)
+plot(srSignal,  "Diag: S/R Flip Reject (1=RBS buy,-1=SBR sell)", display=display.data_window)
 
 // ---------------- INFO TABLE (minimalist) ----------------
 // One flat panel tone, no zebra striping, no loud accent colors — just a

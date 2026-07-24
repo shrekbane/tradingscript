@@ -56,6 +56,10 @@ You set a **minimum grade** in settings — signals graded below that are simply
 
 **Higher-timeframe agreement is a hard requirement, not just a scored factor.** On top of contributing points to the score above, a signal is only allowed to fire in the direction the higher timeframe already agrees with — at every grade, including A+. This is deliberate: a sharp local bounce candle can score high enough to hit A/A+ on its own while still fighting the bigger-picture trend, and this gate exists specifically to block that "buy/sell the bounce against the trend" trade type. A genuinely good counter-trend reversal getting blocked here is an accepted trade-off — the goal is discipline against chasing bounces, not maximizing signal count or raw win rate.
 
+**MACD agreement is a hard requirement too.** A signal is only allowed to fire in the direction MACD Histogram already agrees with — again, at every grade. Found by comparing factor diagnostics across several real B-grade setups: every one had MACD fully opposed (contributing nothing to the winning side) while Local Trend, HTF Bias, and ADX/DMI were all maxed in agreement — the bigger picture lined up, but the most immediate momentum read hadn't actually turned yet. Every A+/A example checked already had MACD agreeing naturally, so this isn't expected to cost much at the top end.
+
+**Explaining a past signal's grade.** Hover any bar in TradingView's Data Window and you'll see the net point contribution (bull minus bear, on a −2 to +2 scale) for each of the five factors individually, plus the overall score and direction — invisible on the chart itself, only visible in the Data Window. Useful for scrubbing back to a specific signal and seeing exactly which factors carried its grade (e.g. a B mostly built on HTF Bias + RSI, with Local Trend and ADX/DMI contributing nothing) instead of only seeing the final badge.
+
 ---
 
 ## 🎯 Core Signal (optional breakout gate)
@@ -68,6 +72,25 @@ Turn on **Core Signal** and the script adds one more requirement: price must **c
 - **On**: score grades quality, Core Signal decides timing. Slower, fewer signals, each one backed by an actual breakout.
 
 There's no universally "correct" setting here — it's a real trade-off between speed and confirmation, so it's worth testing both on your instrument and timeframe.
+
+---
+
+## 🧱 Support/Resistance flip confirmation (on by default)
+
+The script tracks the most recent confirmed swing high and swing low (pivot-based, lookback adjustable via **Pivot Lookback**). Once price closes through one of those levels, it "flips" polarity:
+
+- Old **resistance** broken → becomes a candidate **support** (**RBS** — resistance-becomes-support — look for buys)
+- Old **support** broken → becomes a candidate **resistance** (**SBR** — support-becomes-resistance — look for sells)
+
+A **reject** is a later bar that wicks back into that flipped zone but still closes back away from it — price testing the level and holding, rather than reclaiming it.
+
+With **Require S/R Flip Reject to Confirm Entry** on (default), a qualifying signal doesn't fire the instant the confluence score/HTF/MACD/Core Signal conditions line up — its direction and grade are locked in as "pending," and the actual signal (alert, entry, badge, SL/TP) only fires once a matching reject shows up within the **Confirmation Window** (default 10 bars). If no reject shows up in time, that candidate is dropped silently — no signal, no alert — and a fresh attempt starts checking again the next bar as long as the underlying conditions still hold.
+
+This is a *delayed* confirmation, not a same-bar requirement like HTF Bias or MACD: the confluence read and the price-action reject don't need to land on the same bar, only within the window. Entry price is still the close of whichever bar the signal actually fires on (the confirmation bar, not the original candidate bar) — never the zone price itself, since by the time a reject is confirmed, price has already moved away from that level.
+
+Turn on **Plot S/R Zone Lines on Chart** (default on) to see the tracked zones directly — dotted circles that switch color once a zone flips polarity.
+
+This only tracks a single zone in each direction at a time (the most recent pivot), not a running history of every past level — a deliberate simplification, not a full support/resistance mapping tool.
 
 ---
 
@@ -202,6 +225,12 @@ Each trade's outcome is tallied against the grade it entered at, not whatever th
 - Volatility scaling toggle + Low/High multipliers
 - Lock new signals until TP1 or SL hit (one-trade-at-a-time toggle)
 
+**S/R Diagnostics (WIP)**
+- Pivot Lookback (bars each side)
+- Plot S/R Zone Lines on Chart
+- Require S/R Flip Reject to Confirm Entry (the delayed confirmation gate)
+- Confirmation Window (bars)
+
 **Alert Hours**
 - Only alert during selected hours (toggle)
 - Trading hours session (with day-of-week picker)
@@ -224,12 +253,14 @@ Each trade's outcome is tallied against the grade it entered at, not whatever th
 - **Test before you trust it.** Run it on your instrument and timeframe with alerts on for a while before using it to size real trades.
 - **Give the Grade Win-Rate Stats panel a real sample size before trusting it.** A handful of closed setups per grade can look great or terrible by chance — wait until each grade has a reasonable number of trades before drawing conclusions.
 - **On a phone or small screen, drop Table Text Size to Tiny or Small.** The default size is tuned for a desktop chart and can crowd a small display — this setting shrinks both tables at once.
+- **If signals feel too rare with the S/R gate on, widen the Confirmation Window.** A confluence read that never gets a reject within the window is dropped entirely rather than firing late — widening the window gives price more room to test the zone before that candidate expires.
 
 ---
 
 ## ⚠️ Things to look out for
 
 - This indicator does **not** predict the future and does **not** guarantee profitable trades. Past signal behavior is not indicative of future results.
+- With the S/R flip confirmation gate on, a strong confluence read can go completely unfired if price never rejects the tracked zone within the Confirmation Window — this is by design (no reject, no trade), but it does mean you'll see fewer signals than the raw confluence score alone would produce.
 - On very low timeframes (1m), spread and slippage can meaningfully eat into tighter stops, especially in "Low volatility" mode where distances shrink.
 - The higher-timeframe bias uses `barmerge.lookahead_off` and only updates on confirmed HTF bars — expected non-repainting behavior, but it does mean the HTF read can lag behind fast intraday moves.
 - This is a **technical analysis tool**, not financial advice. Always apply your own risk management and trade at your own discretion.

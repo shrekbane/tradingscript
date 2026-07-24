@@ -255,6 +255,14 @@
     <div class="callout" style="margin-top:20px;">
       <b>Always on, not just scored:</b> higher-timeframe agreement is a hard requirement at every grade, including A+ — a signal can't fire against the higher timeframe's bias, even if a sharp local move scores high enough on its own to hit a top grade. This exists specifically to block "buy/sell the bounce against the trend" setups, not to maximize signal count.
     </div>
+
+    <div class="callout" style="margin-top:12px;">
+      <b>MACD agreement is required too:</b> found by comparing factor diagnostics across real B-grade setups — every one had MACD Histogram fully opposed while trend/HTF/ADX all agreed. Every A+/A example checked already had MACD agreeing naturally, so this mainly filters out the weak-momentum B-grade pattern, not top-grade signals.
+    </div>
+
+    <div class="callout" style="margin-top:12px;">
+      <b>Entry is delayed until price confirms it, by default:</b> even after the score/HTF/MACD all line up, a signal doesn't fire yet — it's held as "pending" until price rejects a flipped support/resistance zone in the same direction, within a configurable window. No reject in time means no signal at all for that setup. Turn this off (or watch the tracked zones directly, plotted on the chart) if you'd rather trade the moment the confluence lines up.
+    </div>
   </div>
 </section>
 
@@ -303,6 +311,16 @@
         <div class="icon teal">🔐</div>
         <h3>Breakeven after TP1</h3>
         <p>The moment TP1 hits, the stop automatically moves to entry — not just a reminder, the tracked SL and drawn line move with it. If price later returns to that level, the alert says "Breakeven hit" instead of "Stop Loss hit."</p>
+      </div>
+      <div class="feature">
+        <div class="icon blue">🔍</div>
+        <h3>Factor diagnostics</h3>
+        <p>Hover any bar in TradingView's Data Window to see each factor's net point contribution — explains exactly which factors carried a past signal's grade, invisible on the chart itself.</p>
+      </div>
+      <div class="feature">
+        <div class="icon amber">🧱</div>
+        <h3>S/R flip confirmation</h3>
+        <p>Tracks the latest swing high/low and, once broken, watches for a reject at the flipped zone (RBS/SBR) before a signal is allowed to fire — on by default, with the tracked zones plottable directly on the chart.</p>
       </div>
     </div>
   </div>
@@ -394,6 +412,15 @@
           <li>Info table, signal markers, EMA lines</li>
           <li>Show previous setups + max count</li>
           <li>Grade win-rate stats panel</li>
+        </ul>
+      </div>
+      <div class="settings-group">
+        <h3>S/R Diagnostics</h3>
+        <ul>
+          <li>Pivot lookback (bars each side)</li>
+          <li>Plot S/R zone lines on chart</li>
+          <li>Require flip reject to confirm entry</li>
+          <li>Confirmation window (bars)</li>
         </ul>
       </div>
     </div>
