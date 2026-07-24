@@ -115,22 +115,26 @@ tableSizeInput = input.string("Small", "Table Text Size", options=["Tiny","Small
 tableSize = tableSizeInput == "Tiny" ? size.tiny : tableSizeInput == "Normal" ? size.normal : tableSizeInput == "Large" ? size.large : size.small
 
 // ---------------- COLOR PALETTE (light/dark theme safe) ----------------
-// One shared palette used everywhere on the chart, chosen so every color
-// keeps decent contrast whether the chart theme is light or dark:
-// - palBull/palBear: mid-brightness teal/red (similar family to TradingView's
-//   own up/down candle colors) rather than pure color.green/color.red or a
-//   very dark maroon, which can wash out or vanish depending on theme.
+// A Blade Runner-inspired reskin — neon cyan/magenta/violet in place of
+// TradingView's stock teal/red, chosen as mid-brightness hex values (same
+// approach as before) so nothing washes out or vanishes on either theme:
+// - palBull/palBear: neon cyan-teal / neon magenta-pink. Keeps the same
+//   "cool = bullish, warm/alarm = bearish" convention as before (still
+//   intuitively reads as buy/sell) just recolored away from stock
+//   teal/red into something distinctly neon.
 // - palNeutral: derived from chart.fg_color, so it's automatically near-black
 //   on a light chart and near-white on a dark chart — used for the TP levels,
 //   which should read as "neutral text," not bullish or bearish.
-// - palEntry: a bright, saturated blue that holds contrast on both themes.
-// - palEmaFast/palEmaSlow: mid-tone amber/violet for the optional EMA lines.
-palBull    = color.new(#26A69A, 0)
-palBear    = color.new(#EF5350, 0)
-palEntry   = color.new(#2962FF, 0)
+// - palEntry: electric violet — holds contrast on both themes, distinct
+//   from the bull/bear hues.
+// - palEmaFast/palEmaSlow: amber/deep violet for the optional EMA lines —
+//   amber/teal is Blade Runner's signature color-grading pair.
+palBull    = color.new(#00B8D9, 0)
+palBear    = color.new(#FF3D81, 0)
+palEntry   = color.new(#7C4DFF, 0)
 palNeutral = color.new(chart.fg_color, 0)
 palEmaFast = color.new(#FFB300, 0)
-palEmaSlow = color.new(#8E24AA, 0)
+palEmaSlow = color.new(#9D4EDD, 0)
 
 // ---------------- TREND ----------------
 emaFast = ta.ema(close, fastLen)
